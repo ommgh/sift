@@ -56,6 +56,25 @@ Inside code projects (a folder with `.git`, `package.json`, …) only screenshot
 folders, `node_modules` and the like, keys, certificates or `.env` files. It only reads: it never changes, moves or
 uploads anything.
 
+## People (opt-in)
+
+Sift can also recognize faces, so you can search for someone: `om at a mountain`, `om and priya at the beach`, or
+just `om` for every photo of them. It's off until you turn it on:
+
+```bash
+sift faces on                         # downloads two small face models (37 MB) and starts looking at photos
+sift person add om ~/Pictures/me1.jpg ~/Pictures/me2.jpg   # 3–5 clear photos of the face work best
+sift faces groups --open              # or: see the faces Sift found, grouped by person…
+sift person add priya --group 2       # …and name a group
+sift person list
+sift faces off                        # turns it off and deletes every faceprint and name
+```
+
+A face model separate from search does this: YuNet finds faces and SFace turns each into a faceprint (both from
+OpenCV's model zoo, Apache 2.0, on the CPU, ~80 ms a photo). A query that names someone is limited to the photos
+with their face, and the rest of the query ranks them. Faceprints stay in the local index like everything else.
+It works best on clear, front-facing faces; profiles, sunglasses and tiny faces in wide shots are often missed.
+
 ## Staying out of the way
 
 Indexing is the only heavy part, and it's set up to run smoothly next to everything else:

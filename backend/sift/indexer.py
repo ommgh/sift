@@ -14,7 +14,7 @@ from pathlib import Path
 
 from inotify_simple import INotify, flags as F
 
-from . import config, extract, power, rules, store
+from . import config, extract, faces, power, rules, store
 from .llama import LlamaError, LlamaServer, pick_device
 
 log = logging.getLogger("sift.indexer")
@@ -109,6 +109,7 @@ class Indexer:
         self.watcher = Watcher(self.events)
         self.last_scan = 0.0
         self.dirty = False      # files read since the search daemon was last told
+        self.face_reader = None
 
     # ------------------------------------------------------------ files on disk
 
@@ -238,7 +239,9 @@ class Indexer:
     def read(self, file_id: int, path: str, kind: str) -> None:
         p = Path(path)
         self.status.update(current=p.name)
-        self.db.execute("BEGIN")
+        # No transaction around the whole file: reading a long PDF takes minutes, and holding the write lock that
+        # long blocks everything else. A file's segments are invisible to search until it's marked done, and a file
+        # that's interrupted is still pending, so it's cleared and read again.
         try:
             store.clear_segments(self.db, file_id)
             if kind == "doc":
@@ -248,12 +251,11 @@ class Indexer:
             else:
                 info = self.read_image(file_id, p, kind)
             store.finish_file(self.db, file_id, info)
-            self.db.execute("COMMIT")
         except LlamaError:
-            self.db.execute("ROLLBACK")
+            store.clear_segments(self.db, file_id)
             raise
         except Exception as e:   # a file that can't be read is recorded, not retried until it changes
-            self.db.execute("ROLLBACK")
+            store.clear_segments(self.db, file_id)
             log.warning("can't read %s: %s", path, e)
             store.finish_file(self.db, file_id, error=str(e)[:300])
 
@@ -290,6 +292,35 @@ class Indexer:
         total = sum(c.values())
         return {"total": total, "done": c.get("done", 0) + c.get("error", 0), "errors": c.get("error", 0)}
 
+    def face_pass(self) -> bool:
+        """Finds faces in a few photos that haven't been looked at yet (after everything is embedded: the model is
+        done, so this is CPU only). False when there's none left."""
+        rows = self.db.execute("SELECT id, path FROM files WHERE kind = 'image' AND status = 'done' AND faces_done = 0 "
+                               "ORDER BY mtime DESC LIMIT 8").fetchall()
+        if not rows:
+            if self.face_reader is not None:
+                self.face_reader = None   # frees OpenCV's models until there are new photos
+                store.bump_generation(self.db)
+            return False
+        self.server.stop_if_idle(IDLE_STOP)
+        if self.face_reader is None:
+            faces.ensure_models()
+            self.face_reader = faces.FaceReader()
+        left, total = self.db.execute("SELECT sum(faces_done = 0), count(*) FROM files "
+                                      "WHERE kind = 'image' AND status = 'done'").fetchone()
+        self.status.update(state="faces", done=total - left, total=total, current="", eta=None)
+        for file_id, path in rows:
+            try:
+                found = self.face_reader.read(Path(path))
+            except Exception as e:
+                log.warning("faces in %s: %s", path, e)
+                found = []
+            self.db.execute("BEGIN")
+            faces.add_faces(self.db, file_id, found)
+            self.db.execute("COMMIT")
+        store.bump_generation(self.db)
+        return True
+
     def run(self) -> None:
         for root in self.cfg.folders:
             self.watcher.watch_tree(root, self.cfg.skip, root not in self.cfg.shallow)
@@ -304,6 +335,8 @@ class Indexer:
             counts = self.counts()
             reason = self.gate()
             pending = self.next_pending() if reason is None else None
+            if reason is None and pending is None and self.cfg.faces.enabled and self.face_pass():
+                continue
             if reason or pending is None:
                 self.server.stop_if_idle(0 if reason else IDLE_STOP)
                 self.status.update(state=reason or "idle", current="", rate=0, eta=None,

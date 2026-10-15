@@ -6,7 +6,7 @@ PartOf=graphical-session.target
 
 [Service]
 ExecStart=%h/.local/bin/sift serve
-Restart=on-failure
+Restart=always
 RestartSec=5
 
 [Install]

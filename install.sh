@@ -50,6 +50,8 @@ systemctl --user restart sift.service sift-indexer.service
 if command -v omarchy-shell > /dev/null; then
   omarchy-shell shell rescanPlugins > /dev/null 2>&1 || true
   omarchy plugin enable sift > /dev/null 2>&1 || true
+  # The panel stays loaded between uses, so new panel code only loads with a fresh shell.
+  omarchy restart shell > /dev/null 2>&1 || true
 fi
 
 echo

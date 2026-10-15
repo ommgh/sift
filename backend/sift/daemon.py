@@ -16,7 +16,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import config, extract, store
+from . import config, extract, faces, store
 from .llama import LlamaServer
 from .search import Searcher
 
@@ -30,6 +30,7 @@ class Engine:
     def __init__(self):
         self.db = store.connect()
         self.searcher = Searcher(self.db)
+        self.faces: faces.FaceIndex | None = None
         self.server = LlamaServer(media=False, device=None, threads=2, name="query")
         self.lock = threading.Lock()
         self.last_used = 0.0
@@ -40,18 +41,37 @@ class Engine:
             self.server.start()
             self.searcher.refresh()
 
-    def search(self, q: str, limit: int) -> list:
+    def people_in(self, q: str) -> tuple[list[str], str, dict[int, float] | None]:
+        """The named people a query mentions (faces on only), the rest of it, and the photos showing all of them."""
+        cfg = config.load()
+        if not cfg.faces.enabled:
+            self.faces = None
+            return [], q, None
+        if self.faces is None:
+            self.faces = faces.FaceIndex(self.db)
+        self.faces.refresh()
+        names, rest = self.faces.names_in(q)
+        if not names:
+            return [], q, None
+        only = None
+        for name in names:
+            matched = self.faces.matches(name, cfg.faces.threshold)
+            only = matched if only is None else {f: min(s, matched[f]) for f, s in only.items() if f in matched}
+        return names, rest, only
+
+    def search(self, q: str, limit: int) -> tuple[list, list[str]]:
         with self.lock:
             self.last_used = time.time()
             q = q.strip()
             if not q:
-                return []
-            vector = self.server.embed_texts([extract.query_prompt(q)])[0]
-            hits = self.searcher.search(q, vector, limit=limit)
+                return [], []
+            names, rest, only = self.people_in(q)
+            vector = self.server.embed_texts([extract.query_prompt(rest)])[0] if rest else None
+            hits = self.searcher.search(rest, vector, limit=limit, only=only)
         for hit in hits[:12]:
             if hit["kind"] == "pdf" and hit["page"]:
                 hit["thumb"] = pdf_thumb(hit["path"], hit["page"], hit["mtime"])
-        return hits
+        return hits, names
 
     def release_when_idle(self) -> None:
         while True:
@@ -60,6 +80,7 @@ class Engine:
                 if self.last_used and time.time() - self.last_used > IDLE_RELEASE:
                     self.server.stop()
                     self.searcher.release()
+                    self.faces = None
                     self.last_used = 0.0
 
 
@@ -104,7 +125,8 @@ class Handler(socketserver.StreamRequestHandler):
             try:
                 op = request.get("op")
                 if op == "search":
-                    reply["results"] = self.engine.search(request.get("q", ""), int(request.get("limit", 30)))
+                    reply["results"], reply["people"] = self.engine.search(request.get("q", ""),
+                                                                            int(request.get("limit", 30)))
                     reply["q"] = request.get("q", "")
                 elif op == "warm":
                     self.engine.warm()

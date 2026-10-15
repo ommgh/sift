@@ -11,7 +11,7 @@ BarWidget {
 
   property var status: ({ state: "stopped" })
   readonly property string state: status.state || "stopped"
-  readonly property bool busy: state === "indexing" || state === "scanning" || state === "starting"
+  readonly property bool busy: state === "indexing" || state === "scanning" || state === "starting" || state === "faces"
   readonly property string sift: Quickshell.env("HOME") + "/.local/bin/sift"
 
   function describe() {
@@ -22,6 +22,7 @@ BarWidget {
       line = "Sift: reading " + count
       if (s.eta) line += " · ~" + Math.max(1, Math.round(s.eta / 60)) + " min left"
     } else if (root.state === "scanning") line = "Sift: looking for new files"
+    else if (root.state === "faces") line = "Sift: looking for faces in " + (s.done || 0) + " of " + (s.total || 0) + " photos"
     else if (root.state === "paused") line = "Sift: paused at " + count + " · right-click to resume"
     else if (root.state === "battery") line = "Sift: waits for the charger · " + count
     else if (root.state === "error") line = "Sift: " + (s.current || "error")

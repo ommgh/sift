@@ -125,16 +125,19 @@ class Searcher:
 
     # ------------------------------------------------------------ search
 
-    def search(self, text: str, query_vector: np.ndarray | None, limit: int = 30, prefix_last: bool = True) -> list:
+    def search(self, text: str, query_vector: np.ndarray | None, limit: int = 30, prefix_last: bool = True,
+               only: dict[int, float] | None = None) -> list:
+        """`only`: the files a search is limited to (the photos of the people it names), with their face match."""
         self.refresh()
-        file_ids = set(self.files)
+        file_ids = set(self.files) if only is None else set(self.files) & set(only)
 
         # Meaning: each file's best segment on this query's scale.
         best: dict[int, tuple[float, int]] = {}
         if query_vector is not None and len(self.matrix):
             z = meaning(self.scores(query_vector), self.modality, self.sets_scale)
             order = np.argsort(z)   # ascending: later writes (higher z) win
-            for row in order[-4000:]:
+            rows = order[-4000:] if only is None else order[np.isin(self.seg_files[order], list(file_ids))]
+            for row in rows:
                 best[int(self.seg_files[row])] = (float(z[row]), int(self.seg_ids[row]))
 
         # Words.
@@ -163,26 +166,43 @@ class Searcher:
         lookup = is_lookup(ts)
         meaning_w, words_w = (0.5, WORD_WEIGHT * 2) if lookup else (1.0, WORD_WEIGHT)
         hinted = kind_hints(text)
-        candidates = {f for f, (z, _) in best.items() if z >= Z_GATE} | {f for f, c in coverage.items() if c >= 0.5}
+        if only is not None:
+            # A person's photos: every one qualifies, ranked by the rest of the query; with nothing else asked,
+            # newest first.
+            candidates = file_ids
+        else:
+            candidates = {f for f, (z, _) in best.items() if z >= Z_GATE} | {f for f, c in coverage.items() if c >= 0.5}
         scored = []
         for f in candidates:
             if f not in self.files:
                 continue
-            score = meaning_w * max(best.get(f, (0, 0))[0], 0) + words_w * coverage.get(f, 0) ** 1.5
+            if only is not None and query_vector is None and not coverage:
+                scored.append((self.files[f]["mtime"], f))
+                continue
+            z = best.get(f, (0, 0))[0]
+            score = meaning_w * (z if only is not None else max(z, 0)) + words_w * coverage.get(f, 0) ** 1.5
             if self.files[f]["kind"] in hinted or ("image" in hinted and self.files[f]["kind"] == "screenshot"):
                 score += 1
             scored.append((score, f))
         scored.sort(key=lambda x: (-x[0], x[1]))
 
+        listing = only is not None and query_vector is None and not coverage
         hits = []
         for score, f in scored[:limit]:
+            if listing:
+                score = only[f]   # sorted newest first; shown as how close the face is
             sem, kw = best.get(f), words.get(f)
-            use_meaning = sem is not None and (sem[0] >= Z_GATE or kw is None)
-            segment = sem[1] if use_meaning else kw[0]
+            use_meaning = sem is not None and (sem[0] >= Z_GATE or kw is None or only is not None)
+            if use_meaning:
+                segment = sem[1]
+            elif kw:
+                segment = kw[0]
+            else:
+                segment = self.db.execute("SELECT id FROM segments WHERE file = ? ORDER BY id LIMIT 1", (f,)).fetchone()[0]
             hits.append(self.hit(f, segment, score, kw[1] if kw and kw[0] == segment else None))
         top = hits[0]["score"] if hits else 0
         for h in hits:
-            h["strong"] = top <= 0 or h["score"] >= top * STRONG_RATIO
+            h["strong"] = only is not None or top <= 0 or h["score"] >= top * STRONG_RATIO
         return hits
 
     def hit(self, file_id: int, segment_id: int, score: float, word_snippet: str | None) -> dict:

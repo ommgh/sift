@@ -104,6 +104,92 @@ def cmd_reveal(args) -> None:
         launch(["xdg-open", str(Path(args.path).parent)])
 
 
+def cmd_faces(args) -> None:
+    from . import faces, store
+
+    cfg = config.load()
+    db = store.connect()
+    if args.action == "on":
+        faces.ensure_models()
+        config.set_faces_enabled(True)
+        print("Faces are on. Sift will look for faces in your photos after it's done reading them.")
+        print("Then name people: sift person add NAME photo.jpg …  (or: sift faces groups, then --group N)")
+    elif args.action == "off":
+        if not args.yes and sys.stdin.isatty():
+            if input("Turn faces off and delete every faceprint and named person? [y/N] ").strip().lower() != "y":
+                return
+        config.set_faces_enabled(False)
+        faces.wipe(db)
+        print("Faces are off; all face data is deleted.")
+    elif args.action == "status":
+        scanned, photos = db.execute("SELECT coalesce(sum(faces_done), 0), count(*) FROM files "
+                                     "WHERE kind = 'image' AND status = 'done'").fetchone()
+        found = db.execute("SELECT count(*) FROM faces").fetchone()[0]
+        named = db.execute("SELECT count(*) FROM people").fetchone()[0]
+        print(f"faces {'on' if cfg.faces.enabled else 'off'}: {scanned} of {photos} photos looked at, "
+              f"{found} faces found, {named} people named")
+    elif args.action == "groups":
+        if not cfg.faces.enabled:
+            sys.exit("faces are off: sift faces on")
+        found = faces.groups(db, cfg.faces.threshold)
+        if not found:
+            print("No groups of unnamed faces yet.")
+            return
+        out = config.CACHE_DIR / "groups"
+        sheets = []
+        for number, ids in enumerate(found[:args.limit], start=1):
+            photos = db.execute(f"SELECT count(DISTINCT file) FROM faces WHERE id IN ({','.join(map(str, ids))})").fetchone()[0]
+            sheet = faces.contact_sheet(db, ids, out / f"{number}.jpg")
+            sheets.append(str(sheet))
+            print(f"{number:3}  {len(ids):4} faces in {photos:4} photos   {sheet}")
+        print("\nName one: sift person add NAME --group N")
+        if args.open:
+            launch(["xdg-open", sheets[0]] if len(sheets) == 1 else ["imv", *sheets] if shutil.which("imv")
+                   else ["xdg-open", sheets[0]])
+
+
+def cmd_person(args) -> None:
+    from . import faces, store
+
+    cfg = config.load()
+    db = store.connect()
+    if args.action == "list":
+        index = faces.FaceIndex(db)
+        if not index.people:
+            print("Nobody named yet: sift person add NAME photo.jpg …")
+        for name, refs in sorted(index.people.items()):
+            print(f"{name:20} {len(refs):3} reference faces, in {len(index.matches(name, cfg.faces.threshold)):4} photos")
+        return
+    if args.action == "remove":
+        print("removed" if faces.remove_person(db, args.name) else f"nobody called {args.name}")
+        return
+    if not cfg.faces.enabled:
+        sys.exit("faces are off: sift faces on")
+    vectors = []
+    for number in args.group or []:
+        group = faces.group_vectors(db, number)
+        if not group:
+            sys.exit(f"no group {number}: run sift faces groups first")
+        vectors += group
+    if args.photos:
+        faces.ensure_models()
+        reader = faces.FaceReader()
+        for photo in args.photos:
+            found = reader.read(Path(photo).expanduser())
+            if not found:
+                print(f"no face found in {photo}")
+                continue
+            biggest = max(found, key=lambda f: f["box"][2] * f["box"][3])
+            if len(found) > 1:
+                print(f"{photo}: {len(found)} faces, using the biggest")
+            vectors.append(biggest["vector"])
+    if not vectors:
+        sys.exit("nothing to learn from: give photos of them, or --group N")
+    faces.add_person(db, args.name, vectors)
+    matched = len(faces.FaceIndex(db).matches(args.name, cfg.faces.threshold))
+    print(f"{args.name}: {len(vectors)} reference faces, found in {matched} photos. Search: \"{args.name} at the beach\"")
+
+
 def cmd_pause(args) -> None:
     if args.command == "toggle":
         power.set_paused(not power.paused())
@@ -131,6 +217,20 @@ def main() -> None:
     p = sub.add_parser("reveal", help="show a file in the file manager")
     p.add_argument("path")
     sub.add_parser("config", help="open the settings file in $EDITOR")
+    p = sub.add_parser("faces", help="find and recognize faces in photos (opt-in)")
+    p.add_argument("action", choices=["on", "off", "status", "groups"])
+    p.add_argument("--yes", action="store_true", help="off: don't ask before deleting face data")
+    p.add_argument("--limit", type=int, default=12, help="groups: how many to show")
+    p.add_argument("--open", action="store_true", help="groups: open the face sheets")
+    p = sub.add_parser("person", help="name the people Sift should recognize")
+    person = p.add_subparsers(dest="action", required=True)
+    q = person.add_parser("add", help="teach Sift a face: photos of them, or a group from sift faces groups")
+    q.add_argument("name")
+    q.add_argument("photos", nargs="*")
+    q.add_argument("--group", type=int, action="append", help="a group number (repeatable)")
+    person.add_parser("list", help="the people Sift knows")
+    q = person.add_parser("remove", help="forget a person")
+    q.add_argument("name")
     args = parser.parse_args()
     # SIGTERM (systemctl stop) runs atexit handlers, which stop the llama-server children.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
@@ -151,6 +251,10 @@ def main() -> None:
         cmd_open(args)
     elif args.command == "reveal":
         cmd_reveal(args)
+    elif args.command == "faces":
+        cmd_faces(args)
+    elif args.command == "person":
+        cmd_person(args)
     elif args.command == "config":
         config.ensure_config()
         os.execvp(os.environ.get("EDITOR", "nvim"), [os.environ.get("EDITOR", "nvim"), str(config.CONFIG_FILE)])

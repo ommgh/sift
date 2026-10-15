@@ -49,6 +49,8 @@ def connect(path: Path = config.INDEX_DB) -> sqlite3.Connection:
     db.execute("PRAGMA synchronous = NORMAL")
     db.execute("PRAGMA foreign_keys = ON")
     db.executescript(SCHEMA)
+    from . import faces
+    faces.ensure_schema(db)
     if get_meta(db, "vector_version") != VECTOR_VERSION:
         if get_meta(db, "vector_version") is not None:
             db.execute("DELETE FROM fts")
@@ -92,8 +94,9 @@ def upsert_file(db, path: Path, kind: str, mtime: float, size: int) -> bool:
         return False
     if row:
         clear_segments(db, row[0])
-        db.execute("UPDATE files SET kind = ?, mtime = ?, size = ?, status = 'pending', error = NULL WHERE id = ?",
-                   (kind, mtime, size, row[0]))
+        db.execute("DELETE FROM faces WHERE file = ?", (row[0],))
+        db.execute("UPDATE files SET kind = ?, mtime = ?, size = ?, status = 'pending', error = NULL, faces_done = 0 "
+                   "WHERE id = ?", (kind, mtime, size, row[0]))
     else:
         db.execute("INSERT INTO files (path, kind, mtime, size) VALUES (?, ?, ?, ?)", (str(path), kind, mtime, size))
     return True

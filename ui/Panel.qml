@@ -20,6 +20,7 @@ Item {
   property var status: ({})
   property bool showWeak: false
   property int weakCount: 0
+  property var people: []
 
   readonly property string sift: Quickshell.env("HOME") + "/.local/bin/sift"
   readonly property string socketPath: Quickshell.env("XDG_RUNTIME_DIR") + "/sift/sift.sock"
@@ -81,12 +82,14 @@ Item {
   function runSearch() {
     if (!root.query.trim()) {
       results.clear()
+      root.people = []
       root.answeredSeq = root.requestSeq
       return
     }
     root.requestSeq += 1
-    if (!root.send({ id: root.requestSeq, op: "search", q: root.query, limit: 40 }))
-      root.answeredSeq = root.requestSeq
+    // Not connected yet (the panel just opened, or the daemon restarted): the query stays pending, shown as
+    // searching, and is sent again once the socket connects (onConnectedChanged).
+    root.send({ id: root.requestSeq, op: "search", q: root.query, limit: 40 })
   }
 
   function handleReply(line) {
@@ -100,6 +103,7 @@ Item {
       return
     }
     root.error = ""
+    root.people = reply.people || []
     root.setResults(reply.results || [])
   }
 
@@ -199,6 +203,7 @@ Item {
     var n = function(v) { return Number(v || 0).toLocaleString(Qt.locale(), "f", 0) }
     if (s.state === "indexing" || s.state === "scanning")
       return "Reading " + n(s.done) + " of " + n(total) + (s.eta ? " · ~" + Math.max(1, Math.round(s.eta / 60)) + " min" : "")
+    if (s.state === "faces") return "Looking for faces · " + n(s.done) + " of " + n(total) + " photos"
     if (s.state === "paused") return "Paused · " + n(s.done) + " of " + n(total)
     if (s.state === "battery") return "Waiting for the charger · " + n(s.done) + " of " + n(total)
     return n(total) + " files"
@@ -371,7 +376,7 @@ Item {
             textFormat: Text.PlainText
             anchors.left: searchGlyph.right
             anchors.leftMargin: Style.space(12)
-            anchors.right: statusText.left
+            anchors.right: peopleChip.left
             anchors.rightMargin: Style.space(12)
             anchors.verticalCenter: parent.verticalCenter
             text: root.query || "Describe what you're looking for…"
@@ -380,6 +385,29 @@ Item {
             font.family: root.fontFamily
             font.pixelSize: Style.font.heading
             elide: Text.ElideLeft
+          }
+
+          // The people the query named, recognized by face.
+          Rectangle {
+            id: peopleChip
+            visible: root.people.length > 0
+            anchors.right: statusText.left
+            anchors.rightMargin: visible ? Style.space(12) : 0
+            anchors.verticalCenter: parent.verticalCenter
+            width: visible ? peopleLabel.implicitWidth + Style.space(16) : 0
+            height: peopleLabel.implicitHeight + Style.space(8)
+            radius: root.cornerRadius
+            color: root.selectedBackground
+
+            Text {
+              id: peopleLabel
+              anchors.centerIn: parent
+              textFormat: Text.PlainText
+              text: "\udb80\udc04  " + root.people.join(", ")
+              color: root.selectedText
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
           }
 
           Text {

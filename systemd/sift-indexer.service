@@ -6,7 +6,7 @@ PartOf=graphical-session.target
 
 [Service]
 ExecStart=%h/.local/bin/sift index
-Restart=on-failure
+Restart=always
 RestartSec=30
 # Never in the way: the lowest CPU and disk priority, so it only uses what the rest of the desktop leaves free.
 Nice=19
