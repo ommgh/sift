@@ -1,6 +1,16 @@
-# Sift
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/banner-dark.png">
+    <img src=".github/assets/banner.png" alt="Sift: find files by what's in them. On-device semantic search for Omarchy." width="100%">
+  </picture>
+</h1>
 
-**Search your files by what's in them, on Omarchy.**
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#using-it">Using it</a> ·
+  <a href="#people-opt-in">People</a> ·
+  <a href="#how-it-works">How it works</a>
+</p>
 
 Press <kbd>Super</kbd> + <kbd>S</kbd> and describe what you're looking for: "the clause about pets in the lease",
 "screenshot of a payment declined error", "python code editor with a rag script". Sift finds the photo, screenshot,
