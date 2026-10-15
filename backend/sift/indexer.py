@@ -204,8 +204,9 @@ class Indexer:
             pages = number
             scale = number <= extract.SCALE_PAGES
             if image is not None:
+                reading = extract.ocr_start(_png(image))
                 vector = self.server.embed_image(extract.prepare_image(image, extract.PAGE_BUDGET))
-                ocr = extract.ocr(_png(image))
+                ocr = extract.ocr_finish(reading)
                 store.add_segment(self.db, file_id, path, number, "image", (text.strip() + "\n" + ocr).strip(),
                                   vector, scale)
             else:
@@ -224,9 +225,11 @@ class Indexer:
             store.add_segment(self.db, file_id, path, 0, "image", None, None)   # an icon: found by name only
             return info
         budget = extract.SCREENSHOT_BUDGET if kind == "screenshot" else extract.PHOTO_BUDGET
-        vector = self.server.embed_image(extract.prepare_image(image, budget))
         # Text in screenshots and other PNGs (diagrams, designs, scans) is read for exact words; photos skip it.
-        text = extract.ocr(path) if kind == "screenshot" or path.suffix.lower() == ".png" else ""
+        # tesseract (CPU) reads while the model (GPU) embeds.
+        reading = extract.ocr_start(path) if kind == "screenshot" or path.suffix.lower() == ".png" else None
+        vector = self.server.embed_image(extract.prepare_image(image, budget))
+        text = extract.ocr_finish(reading)
         store.add_segment(self.db, file_id, path, 0, "image", text or None, vector)
         if extract.has_words(text) and len(text) > 60:
             # The screenshot's words by meaning too ("payment declined error"), next to what it shows.

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "sift",
+  "name": "Sift",
+  "version": "0.1.0",
+  "author": "Om Mishra",
+  "description": "Search your files by what's in them: documents, PDFs, pictures and screenshots, on-device",
+  "kinds": [
+    "overlay",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "ui/Panel.qml",
+    "barWidget": "ui/BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Sift",
+    "description": "Shows Sift's indexing progress; click to search, right-click to pause",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

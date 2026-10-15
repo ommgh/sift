@@ -1,0 +1,21 @@
+[Unit]
+Description=Sift indexer
+Documentation=https://github.com/ommgh/sift
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/sift index
+Restart=on-failure
+RestartSec=30
+# Never in the way: the lowest CPU and disk priority, at most 3 of the CPU's threads, and a memory ceiling
+# (the model with its image encoder is ~1 GB). The indexer itself also waits while on battery or hot.
+Nice=19
+CPUSchedulingPolicy=idle
+IOSchedulingClass=idle
+CPUQuota=300%
+MemoryHigh=2G
+MemoryMax=2600M
+
+[Install]
+WantedBy=graphical-session.target

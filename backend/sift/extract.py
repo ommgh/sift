@@ -5,6 +5,7 @@ import math
 import os
 import re
 import subprocess
+import threading
 import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
@@ -165,22 +166,45 @@ def open_image(path: Path) -> Image.Image:
     return image
 
 
-def ocr(source: Path | bytes) -> str:
-    """Text in a picture, by tesseract on one thread (it's for exact words: codes, errors, names)."""
+def ocr_start(source: Path | bytes) -> subprocess.Popen | None:
+    """Starts tesseract on one thread, so it reads a picture while the GPU embeds it (see ocr_finish)."""
     env = dict(os.environ, OMP_THREAD_LIMIT="1")
+    target = "stdin" if isinstance(source, bytes) else str(source)
     try:
-        if isinstance(source, bytes):
-            result = subprocess.run(["tesseract", "stdin", "stdout", "-l", "eng", "--psm", "3"], input=source,
-                                    capture_output=True, timeout=60, env=env)
-        else:
-            result = subprocess.run(["tesseract", str(source), "stdout", "-l", "eng", "--psm", "3"],
-                                    capture_output=True, timeout=60, env=env)
-    except (OSError, subprocess.TimeoutExpired):
+        proc = subprocess.Popen(["tesseract", target, "stdout", "-l", "eng", "--psm", "3"], env=env,
+                                stdin=subprocess.PIPE if isinstance(source, bytes) else subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    except OSError:
+        return None
+    if isinstance(source, bytes):
+        threading.Thread(target=_feed, args=(proc, source), daemon=True).start()
+    return proc
+
+
+def _feed(proc: subprocess.Popen, data: bytes) -> None:
+    try:
+        proc.stdin.write(data)
+        proc.stdin.close()
+    except OSError:
+        pass
+
+
+def ocr_finish(proc: subprocess.Popen | None) -> str:
+    """Text in a picture (for exact words: codes, errors, names), lines without a real word dropped as noise."""
+    if proc is None:
         return ""
-    text = result.stdout.decode("utf-8", errors="replace")
-    # Drop OCR noise: lines without at least one real word.
+    try:
+        out, _ = proc.communicate(timeout=60)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        return ""
+    text = out.decode("utf-8", errors="replace")
     lines = [line.strip() for line in text.splitlines() if re.search(r"[A-Za-z]{3,}", line)]
     return "\n".join(lines)
+
+
+def ocr(source: Path | bytes) -> str:
+    return ocr_finish(ocr_start(source))
 
 
 # ---------------------------------------------------------------- PDFs

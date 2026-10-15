@@ -1,0 +1,16 @@
+[Unit]
+Description=Sift search daemon
+Documentation=https://github.com/ommgh/sift
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/sift serve
+Restart=on-failure
+RestartSec=5
+# The query model (310 MB) and the vectors, only while searching.
+MemoryHigh=900M
+MemoryMax=1200M
+
+[Install]
+WantedBy=graphical-session.target
