@@ -25,31 +25,23 @@ if [[ -x "$OUT/bin/llama-server" && "$(cat "$OUT/BUILD" 2>/dev/null)" == "$STAMP
 fi
 
 mkdir -p "$OUT"
-# Fetched by its exact commit (a tag can move), and checked out detached.
+# llama.cpp is fetched by its exact commit (a tag can move) and built in one fail-closed chain from that commit:
+# checked out detached (--force drops an earlier copy of the patch), patched, configured, built. The SHA is written
+# out, not $COMMIT, so the plugin marketplace's checks can follow it; keep the two in step.
 if [[ ! -d "$SOURCE/.git" ]]; then
   rm -rf "$SOURCE"
   git init --quiet "$SOURCE"
-  # The SHA is written out (not $COMMIT) so the marketplace's checks can see what's fetched; keep both in step.
-  git -C "$SOURCE" fetch --quiet --depth 1 https://github.com/ggml-org/llama.cpp 4d756bc72bf00a4aacf410ae15a2d315f3db400d
-  git -C "$SOURCE" -c advice.detachedHead=false checkout --quiet --detach 4d756bc72bf00a4aacf410ae15a2d315f3db400d
 fi
-if [[ "$(git -C "$SOURCE" rev-parse HEAD)" != "$COMMIT" ]]; then
-  echo "llama.cpp's $TAG isn't commit $COMMIT: not building it" >&2
-  exit 1
-fi
-if git -C "$SOURCE" apply --check "$PATCH" 2>/dev/null; then
-  git -C "$SOURCE" apply "$PATCH"
-elif ! git -C "$SOURCE" apply --reverse --check "$PATCH" 2>/dev/null; then
-  echo "$PATCH doesn't apply and isn't applied already" >&2
-  exit 1
-fi
+git -C "$SOURCE" fetch --quiet --depth 1 https://github.com/ggml-org/llama.cpp 4d756bc72bf00a4aacf410ae15a2d315f3db400d
 
 GPU=()
 [[ $FLAVOR == vulkan ]] && GPU=(-DGGML_VULKAN=ON)
-cmake -S "$SOURCE" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON "${GPU[@]}" \
-  -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_TOOLS=ON -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TESTS=OFF \
-  -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DBUILD_SHARED_LIBS=OFF > /dev/null
-cmake --build "$BUILD" -j "$(nproc)" --target llama-server > /dev/null
+git -C "$SOURCE" -c advice.detachedHead=false checkout --quiet --force --detach 4d756bc72bf00a4aacf410ae15a2d315f3db400d \
+  && git -C "$SOURCE" apply "$PATCH" \
+  && cmake -S "$SOURCE" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON "${GPU[@]}" \
+    -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_TOOLS=ON -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TESTS=OFF \
+    -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DBUILD_SHARED_LIBS=OFF > /dev/null \
+  && cmake --build "$BUILD" -j "$(nproc)" --target llama-server > /dev/null
 
 mkdir -p "$OUT/bin"
 cp "$BUILD/bin/llama-server" "$OUT/bin/"
