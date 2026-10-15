@@ -4,7 +4,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// Shows up only while Sift has something to say: indexing, paused, or failing.
+// Shows up only while Sift has something to say: indexing, paused, failing, or not set up yet (a click starts setup).
 BarWidget {
   id: root
   moduleName: "sift"
@@ -13,11 +13,14 @@ BarWidget {
   readonly property string state: status.state || "stopped"
   readonly property bool busy: state === "indexing" || state === "scanning" || state === "starting" || state === "faces"
   readonly property string sift: Quickshell.env("HOME") + "/.local/bin/sift"
+  readonly property string pluginDir: decodeURIComponent(String(Qt.resolvedUrl("..")).replace(/^file:\/\//, ""))
+  property bool needsSetup: false
 
   function describe() {
     var s = root.status
     var count = (s.done || 0).toLocaleString(Qt.locale(), "f", 0) + " of " + (s.total || 0).toLocaleString(Qt.locale(), "f", 0) + " files"
     var line
+    if (root.needsSetup) return "Sift: click to set up"
     if (root.state === "indexing") {
       line = "Sift: reading " + count
       if (s.eta) line += " · ~" + Math.max(1, Math.round(s.eta / 60)) + " min left"
@@ -30,7 +33,7 @@ BarWidget {
     return line
   }
 
-  visible: busy || state === "paused" || state === "error"
+  visible: busy || state === "paused" || state === "error" || needsSetup
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
@@ -46,12 +49,24 @@ BarWidget {
     onLoadFailed: root.status = { state: "stopped" }
   }
 
+  // The wrapper the installer writes: missing means setup hasn't run.
+  FileView {
+    id: wrapper
+    path: root.sift
+    printErrors: false
+    onLoaded: root.needsSetup = false
+    onLoadFailed: root.needsSetup = true
+  }
+
   // The status file is replaced, not rewritten, so a watch can miss it; a slow poll catches up.
   Timer {
     interval: 4000
     running: true
     repeat: true
-    onTriggered: statusFile.reload()
+    onTriggered: {
+      statusFile.reload()
+      if (root.needsSetup) wrapper.reload()
+    }
   }
 
   BarIconButton {
@@ -62,10 +77,12 @@ BarWidget {
     slotSize: Style.bar.statusSlot
     fontSize: Style.font.caption
     dimmed: root.state === "paused" || root.state === "battery"
-    active: root.state === "error"
+    active: root.state === "error" || root.needsSetup
     tooltipText: root.describe()
     onPressed: function(mouseButton) {
-      if (mouseButton === Qt.RightButton) Quickshell.execDetached([root.sift, "toggle"])
+      if (root.needsSetup)
+        Quickshell.execDetached(["omarchy-launch-floating-terminal-with-presentation", Util.shellQuote(root.pluginDir + "/install.sh")])
+      else if (mouseButton === Qt.RightButton) Quickshell.execDetached([root.sift, "toggle"])
       else if (root.bar) root.bar.run("omarchy-shell shell toggle sift '{}'")
     }
   }

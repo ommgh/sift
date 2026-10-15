@@ -15,7 +15,7 @@ from pathlib import Path
 from inotify_simple import INotify, flags as F
 
 from . import config, extract, faces, power, rules, store
-from .llama import LlamaError, LlamaServer, pick_device
+from .llama import LlamaError, LlamaServer, pick_device, threads_for
 
 log = logging.getLogger("sift.indexer")
 
@@ -103,8 +103,10 @@ class Indexer:
         self.cfg_mtime = config.CONFIG_FILE.stat().st_mtime
         self.db = store.connect()
         self.status = Status()
-        self.server = LlamaServer(media=True, device=pick_device(self.cfg.power.device),
-                                  threads=self.cfg.power.threads, name="indexer")
+        device = pick_device(self.cfg.power.device)
+        self.server = LlamaServer(media=True, device=device, threads=threads_for(self.cfg.power.threads, device),
+                                  name="indexer")
+        log.info("model runs on %s, %d threads", device or "the CPU", self.server.threads)
         self.events: queue.Queue = queue.Queue()
         self.watcher = Watcher(self.events)
         self.last_scan = 0.0
@@ -272,9 +274,11 @@ class Indexer:
             old_device = self.server.device
             self.cfg = config.load()
             device = pick_device(self.cfg.power.device)
-            if device != old_device or self.cfg.power.threads != self.server.threads:
+            threads = threads_for(self.cfg.power.threads, device)
+            if device != old_device or threads != self.server.threads:
                 self.server.stop()
-                self.server = LlamaServer(media=True, device=device, threads=self.cfg.power.threads, name="indexer")
+                self.server = LlamaServer(media=True, device=device, threads=threads, name="indexer")
+                log.info("model runs on %s, %d threads", device or "the CPU", threads)
             for root in self.cfg.folders:
                 self.watcher.watch_tree(root, self.cfg.skip, root not in self.cfg.shallow)
             self.scan()

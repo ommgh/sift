@@ -21,6 +21,10 @@ Item {
   property bool showWeak: false
   property int weakCount: 0
   property var people: []
+  property string view: "search"     // search | manage (Ctrl+S: folders and people)
+  property bool needsSetup: false
+
+  readonly property string pluginDir: decodeURIComponent(String(Qt.resolvedUrl("..")).replace(/^file:\/\//, ""))
 
   readonly property string sift: Quickshell.env("HOME") + "/.local/bin/sift"
   readonly property string socketPath: Quickshell.env("XDG_RUNTIME_DIR") + "/sift/sift.sock"
@@ -44,17 +48,39 @@ Item {
 
   // ------------------------------------------------------------ open / close
 
+  // payloadJson may name a view: {"view": "folders"} or {"view": "people"} opens Ctrl+S's tabs directly.
   function open(payloadJson) {
+    var payload = {}
+    try { payload = JSON.parse(payloadJson || "{}") || {} } catch (e) {}
     root.opened = true
     root.query = ""
     root.error = ""
     root.selectedIndex = 0
     root.showWeak = false
+    root.view = "search"
     results.clear()
     pointerGate.reset()
     sock.connected = true
     statusFile.reload()
+    wrapper.reload()
+    if (payload.view === "folders" || payload.view === "people") root.showManage(payload.view)
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function showManage(tab) {
+    root.view = "manage"
+    manage.opened(tab)
+  }
+
+  function searchFor(text) {
+    root.view = "search"
+    root.setQuery(text)
+  }
+
+  // First run from the plugin marketplace: Sift's files are here but nothing is built yet.
+  function runSetup() {
+    root.close()
+    Quickshell.execDetached(["omarchy-launch-floating-terminal-with-presentation", Util.shellQuote(root.pluginDir + "/install.sh")])
   }
 
   function close() {
@@ -96,6 +122,10 @@ Item {
     var reply
     try { reply = JSON.parse(line) } catch (e) { return }
     if (reply.id === undefined || reply.id === null) return
+    if (typeof reply.id === "string") {   // the Folders and People views' requests
+      manage.handleReply(reply)
+      return
+    }
     if (reply.id < root.requestSeq) return   // an answer to an older query: a newer one is on its way
     root.answeredSeq = reply.id
     if (!reply.ok) {
@@ -255,6 +285,15 @@ Item {
     onTriggered: if (root.opened && !sock.connected) sock.connected = true
   }
 
+  // The wrapper the installer writes: missing means setup hasn't run.
+  FileView {
+    id: wrapper
+    path: root.sift
+    printErrors: false
+    onLoaded: root.needsSetup = false
+    onLoadFailed: root.needsSetup = true
+  }
+
   FileView {
     id: statusFile
     path: Quickshell.env("XDG_RUNTIME_DIR") + "/sift/status.json"
@@ -311,7 +350,14 @@ Item {
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
           var ctrl = event.modifiers & Qt.ControlModifier
-          if (event.key === Qt.Key_Escape) {
+          if (ctrl && event.key === Qt.Key_S && !root.needsSetup) {
+            if (root.view === "manage") root.view = "search"
+            else root.showManage("")
+          } else if (root.view === "manage") {
+            if (!manage.handleKey(event) && event.key === Qt.Key_Escape) root.view = "search"
+          } else if (root.needsSetup && !sock.connected && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
+            root.runSetup()
+          } else if (event.key === Qt.Key_Escape) {
             if (root.query) root.setQuery("")
             else root.close()
           } else if (ctrl && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
@@ -353,6 +399,7 @@ Item {
         Item {
           width: parent.width
           height: root.headerHeight
+          visible: root.view === "search"
 
           Text {
             id: searchGlyph
@@ -408,6 +455,12 @@ Item {
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
             }
+
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.showManage("people")
+            }
           }
 
           Text {
@@ -423,9 +476,18 @@ Item {
           }
         }
 
+        Manage {
+          id: manage
+          panel: root
+          width: parent.width
+          height: parent.height - root.footerHeight - root.contentSpacing
+          visible: root.view === "manage"
+        }
+
         Item {
           width: parent.width
           height: parent.height - root.headerHeight - root.footerHeight - root.contentSpacing * 2
+          visible: root.view === "search"
 
           Row {
             anchors.fill: parent
@@ -651,7 +713,7 @@ Item {
             visible: results.count === 0
 
             Text {
-              text: root.error ? "" : "󰍉"
+              text: root.error && !root.needsSetup ? "" : "󰍉"
               color: root.selectedText
               opacity: 0.8
               font.family: root.fontFamily
@@ -662,7 +724,8 @@ Item {
 
             Text {
               textFormat: Text.PlainText
-              text: root.error ? root.error
+              text: root.needsSetup && root.error ? "Sift needs a one-time setup"
+                : root.error ? root.error
                 : !root.query ? "Photos, screenshots, PDFs and documents, by what's in them"
                 : root.searching ? "Searching…"
                 : "Nothing matches “" + root.query + "”"
@@ -674,6 +737,33 @@ Item {
               wrapMode: Text.Wrap
               width: parent.width
             }
+
+            Text {
+              visible: root.needsSetup && root.error !== ""
+              textFormat: Text.PlainText
+              text: "It builds its search engine for this machine (about 3 minutes) and downloads the model "
+                + "(865 MB), then asks which folders to read. Everything stays on this computer.\n\n↵  Set up Sift"
+              color: root.foreground
+              opacity: 0.65
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              horizontalAlignment: Text.AlignHCenter
+              wrapMode: Text.Wrap
+              width: parent.width
+            }
+
+            Text {
+              visible: !root.query && !root.error
+              textFormat: Text.PlainText
+              text: "Try \u201cscreenshot of an error\u201d, \u201cthe lease pdf about pets\u201d, \u201cINV-2041\u201d"
+              color: root.foreground
+              opacity: 0.45
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              horizontalAlignment: Text.AlignHCenter
+              wrapMode: Text.Wrap
+              width: parent.width
+            }
           }
         }
 
@@ -681,7 +771,9 @@ Item {
           width: parent.width
           height: root.footerHeight
           textFormat: Text.PlainText
-          text: "↵ open   ctrl ↵ show in folder   ctrl c copy file   esc clear"
+          text: root.view === "manage" ? manage.hints
+            : root.needsSetup && root.error ? "↵ set up   esc close"
+            : "↵ open   ctrl ↵ show in folder   ctrl c copy file   ctrl s folders & people   esc clear"
           color: root.foreground
           opacity: 0.4
           font.family: root.fontFamily

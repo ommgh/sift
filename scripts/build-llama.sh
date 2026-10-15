@@ -44,8 +44,7 @@ GPU=()
 cmake -S "$SOURCE" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON "${GPU[@]}" \
   -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_TOOLS=ON -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TESTS=OFF \
   -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DBUILD_SHARED_LIBS=OFF > /dev/null
-# Half the cores: the build itself shouldn't spin the fans up either.
-cmake --build "$BUILD" -j "$(( $(nproc) / 2 ))" --target llama-server > /dev/null
+cmake --build "$BUILD" -j "$(nproc)" --target llama-server > /dev/null
 
 mkdir -p "$OUT/bin"
 cp "$BUILD/bin/llama-server" "$OUT/bin/"

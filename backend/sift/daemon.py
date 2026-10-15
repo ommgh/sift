@@ -1,6 +1,9 @@
 """The search daemon: answers the panel over a Unix socket, one JSON object per line.
 
 Requests: {"id": 1, "op": "search", "q": "...", "limit": 30} · {"op": "warm"} · {"op": "status"} · {"op": "ping"}
+Folders view: "folders" · "browse" {path} · "folder-add" {path, subfolders} · "folder-remove" {path} ·
+"folder-subfolders" {path, on}. People view: "people" · "faces" {on} · "person-name" {face, name} (the group holding
+that face) · "person-rename" {name, to} · "person-remove" {name} · "group-hide" {face}.
 Replies carry the request's id.
 
 Queries are embedded by the text model alone (310 MB), on the CPU: a query is a dozen tokens (~20 ms), so searching
@@ -16,7 +19,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import config, extract, faces, store
+from . import config, extract, faces, folders, store
 from .llama import LlamaServer
 from .search import Searcher
 
@@ -73,6 +76,51 @@ class Engine:
                 hit["thumb"] = pdf_thumb(hit["path"], hit["page"], hit["mtime"])
         return hits, names
 
+    # ------------------------------------------------------------ the Folders and People views
+
+    def manage(self, op: str, request: dict) -> dict:
+        """The settings ops. Folder changes land in the settings file, which the indexer watches."""
+        with self.lock:
+            cfg = config.load()
+            if op == "folders":
+                return {"folders": folders.overview(self.db), "suggest": folders.suggestions()}
+            if op == "browse":
+                return {"browse": folders.browse(request.get("path"))}
+            if op == "folder-add":
+                config.add_folder(Path(request["path"]), bool(request.get("subfolders", True)))
+                return {"folders": folders.overview(self.db), "suggest": folders.suggestions()}
+            if op == "folder-remove":
+                config.remove_folder(Path(request["path"]))
+                return {"folders": folders.overview(self.db), "suggest": folders.suggestions()}
+            if op == "folder-subfolders":
+                config.set_subfolders(Path(request["path"]), bool(request.get("on")))
+                return {"folders": folders.overview(self.db), "suggest": folders.suggestions()}
+            if op == "faces":
+                if request.get("on"):
+                    faces.ensure_models()
+                    config.set_faces_enabled(True)
+                else:
+                    config.set_faces_enabled(False)
+                    faces.wipe(self.db)
+                self.faces = None
+                cfg = config.load()
+            elif op == "person-name":
+                name = str(request.get("name", "")).strip()
+                ids = faces.group_with(self.db, int(request["face"]))
+                if not name or not ids:
+                    raise ValueError("that group changed: look again")
+                faces.add_person(self.db, name, faces.vectors_of(self.db, ids))
+            elif op == "person-rename":
+                faces.rename_person(self.db, request["name"], str(request.get("to", "")))
+            elif op == "person-remove":
+                faces.remove_person(self.db, request["name"])
+            elif op == "group-hide":
+                faces.hide_faces(self.db, faces.group_with(self.db, int(request["face"])))
+            elif op != "people":
+                raise ValueError(f"unknown op {op!r}")
+            people = faces.overview(self.db, cfg.faces.threshold) if cfg.faces.enabled else {}
+            return {"people": dict(people, enabled=cfg.faces.enabled)}
+
     def release_when_idle(self) -> None:
         while True:
             time.sleep(30)
@@ -111,6 +159,10 @@ def read_status() -> dict:
         return {"state": "stopped"}
 
 
+MANAGE_OPS = {"folders", "browse", "folder-add", "folder-remove", "folder-subfolders", "people", "faces", "person-name",
+              "person-rename", "person-remove", "group-hide"}
+
+
 class Handler(socketserver.StreamRequestHandler):
     engine: Engine
 
@@ -132,6 +184,8 @@ class Handler(socketserver.StreamRequestHandler):
                     self.engine.warm()
                 elif op == "status":
                     reply["status"] = read_status()
+                elif op in MANAGE_OPS:
+                    reply.update(self.engine.manage(op, request))
                 elif op != "ping":
                     raise ValueError(f"unknown op {op!r}")
                 reply["ok"] = True

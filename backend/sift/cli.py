@@ -190,6 +190,58 @@ def cmd_person(args) -> None:
     print(f"{args.name}: {len(vectors)} reference faces, found in {matched} photos. Search: \"{args.name} at the beach\"")
 
 
+def cmd_folders(args) -> None:
+    from . import folders, store
+
+    if args.action == "add":
+        for path in args.paths:
+            covering = config.covered_by(Path(path).expanduser())
+            if covering and covering != Path(path).expanduser().resolve() and not args.top_level:
+                print(f"{path}: already read as part of {config.display_path(covering)}")
+                continue
+            config.add_folder(Path(path), subfolders=not args.top_level)
+    elif args.action == "remove":
+        for path in args.paths:
+            if not config.remove_folder(Path(path)):
+                print(f"{path} isn't one of Sift's folders")
+    elif args.action in ("subfolders", "top-level"):
+        for path in args.paths:
+            config.set_subfolders(Path(path), args.action == "subfolders")
+    elif args.action == "suggest":
+        for f in folders.suggestions():
+            print(f["label"])
+        return
+    for f in folders.overview(store.connect()):
+        scope = "with subfolders" if f["subfolders"] else "top level only"
+        state = "missing" if not f["exists"] else f"{f['done']:,} of {f['files']:,} files read"
+        print(f"{f['label']:32} {scope:16} {state}")
+    if args.action != "list":
+        print("The indexer picks this up within a few seconds.")
+
+
+def cmd_shortcut(args) -> None:
+    from . import shortcut
+
+    if args.action == "set":
+        try:
+            replaced = shortcut.bind(" ".join(args.combo))
+        except (ValueError, RuntimeError) as e:
+            sys.exit(str(e))
+        combo, _ = shortcut.current()
+        print(f"{combo} opens Sift" + (f" (it was “{replaced}”; sift shortcut off gives it back)" if replaced else ""))
+    elif args.action == "off":
+        print("removed" if shortcut.remove() else "no shortcut written by sift (a binding you wrote stays as it is)")
+    elif args.action == "pick":
+        from . import setup
+        setup.run("shortcut")
+    else:
+        combo, managed = shortcut.current()
+        if not combo:
+            print("No shortcut. Set one: sift shortcut set \"SUPER + S\" (or sift shortcut pick)")
+        else:
+            print(f"{combo}" + ("" if managed else f"  (your own line in {shortcut.BINDINGS})"))
+
+
 def cmd_pause(args) -> None:
     if args.command == "toggle":
         power.set_paused(not power.paused())
@@ -222,6 +274,18 @@ def main() -> None:
     p.add_argument("--yes", action="store_true", help="off: don't ask before deleting face data")
     p.add_argument("--limit", type=int, default=12, help="groups: how many to show")
     p.add_argument("--open", action="store_true", help="groups: open the face sheets")
+    p = sub.add_parser("folders", help="the folders Sift reads: list, add, remove")
+    p.add_argument("action", nargs="?", default="list",
+                   choices=["list", "add", "remove", "subfolders", "top-level", "suggest"])
+    p.add_argument("paths", nargs="*")
+    p.add_argument("--top-level", action="store_true", help="add: only the files directly in it")
+    p = sub.add_parser("shortcut", help="the key that opens Sift: show, set, pick, off")
+    p.add_argument("action", nargs="?", default="show", choices=["show", "set", "pick", "off"])
+    p.add_argument("combo", nargs="*", help='set: e.g. "SUPER + S"')
+    p = sub.add_parser("setup", help="the first-run questions again: folders, shortcut, people")
+    p.add_argument("only", nargs="?", choices=["folders", "shortcut", "people"])
+    p = sub.add_parser("doctor", help="what Sift runs on, and what's missing")
+    p.add_argument("--bench", action="store_true", help="also time the model on this machine")
     p = sub.add_parser("person", help="name the people Sift should recognize")
     person = p.add_subparsers(dest="action", required=True)
     q = person.add_parser("add", help="teach Sift a face: photos of them, or a group from sift faces groups")
@@ -255,6 +319,16 @@ def main() -> None:
         cmd_faces(args)
     elif args.command == "person":
         cmd_person(args)
+    elif args.command == "folders":
+        cmd_folders(args)
+    elif args.command == "shortcut":
+        cmd_shortcut(args)
+    elif args.command == "setup":
+        from . import setup
+        setup.run(args.only)
+    elif args.command == "doctor":
+        from . import setup
+        setup.doctor(args.bench)
     elif args.command == "config":
         config.ensure_config()
         os.execvp(os.environ.get("EDITOR", "nvim"), [os.environ.get("EDITOR", "nvim"), str(config.CONFIG_FILE)])

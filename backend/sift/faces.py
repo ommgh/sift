@@ -78,7 +78,10 @@ def wipe(db) -> None:
     db.execute("DELETE FROM people")
     db.execute("UPDATE files SET faces_done = 0")
     store.set_meta(db, "face_groups", "{}")
+    store.set_meta(db, "faces_hidden", "[]")
     store.bump_generation(db)
+    import shutil
+    shutil.rmtree(config.CACHE_DIR / "faces", ignore_errors=True)
 
 
 class FaceReader:
@@ -152,6 +155,23 @@ def remove_person(db, name: str) -> bool:
     return gone
 
 
+def rename_person(db, name: str, new: str) -> None:
+    """Renames someone; renaming to a name that's taken merges the two."""
+    new = new.strip()
+    if not new:
+        raise ValueError("a name can't be empty")
+    person = db.execute("SELECT id FROM people WHERE name = ?", (name,)).fetchone()
+    if not person:
+        raise ValueError(f"nobody called {name}")
+    other = db.execute("SELECT id FROM people WHERE name = ? AND id != ?", (new, person[0])).fetchone()
+    if other:
+        db.execute("UPDATE person_refs SET person = ? WHERE person = ?", (other[0], person[0]))
+        db.execute("DELETE FROM people WHERE id = ?", (person[0],))
+    else:
+        db.execute("UPDATE people SET name = ? WHERE id = ?", (new, person[0]))
+    store.bump_generation(db)
+
+
 class FaceIndex:
     """All faceprints in memory (128 floats each), for matching people at search time."""
 
@@ -203,13 +223,23 @@ class FaceIndex:
 
 # ---------------------------------------------------------------- groups of unnamed faces
 
+def hidden_faces(db) -> set[int]:
+    return set(json.loads(store.get_meta(db, "faces_hidden") or "[]"))
+
+
+def hide_faces(db, face_ids: list[int]) -> None:
+    """Leaves faces out of the groups: strangers in the background, posters, statues."""
+    store.set_meta(db, "faces_hidden", json.dumps(sorted(hidden_faces(db) | set(face_ids))))
+
+
 def groups(db, threshold: float) -> list[list[int]]:
     """Faces nobody has been named for, grouped by who they look like (biggest group first). Kept in the index's meta
     so `sift person add NAME --group N` refers to what `sift faces groups` showed."""
     index = FaceIndex(db)
     if not len(index.vectors):
+        store.set_meta(db, "face_groups", "{}")
         return []
-    named = np.zeros(len(index.vectors), bool)
+    named = np.isin(index.face_ids, list(hidden_faces(db)))
     for refs in index.people.values():
         named |= (index.vectors @ refs.T).max(axis=1) >= threshold
     rows = np.nonzero(~named)[0]
@@ -236,13 +266,83 @@ def groups(db, threshold: float) -> list[list[int]]:
     return ordered
 
 
-def group_vectors(db, number: int) -> list[np.ndarray]:
-    saved = json.loads(store.get_meta(db, "face_groups") or "{}")
-    ids = saved.get(str(number))
-    if not ids:
+def group_ids(db, number: int) -> list[int]:
+    return json.loads(store.get_meta(db, "face_groups") or "{}").get(str(number)) or []
+
+
+def group_with(db, face_id: int) -> list[int]:
+    """The group (as last listed) a face is in: the panel names groups by a face in them, which stays put while the
+    indexer finds more faces and the numbering moves."""
+    for ids in json.loads(store.get_meta(db, "face_groups") or "{}").values():
+        if face_id in ids:
+            return ids
+    return []
+
+
+def vectors_of(db, face_ids: list[int]) -> list[np.ndarray]:
+    if not face_ids:
         return []
-    marks = ",".join(str(i) for i in ids)
+    marks = ",".join(str(int(i)) for i in face_ids)
     return [np.frombuffer(v, np.float32) for (v,) in db.execute(f"SELECT vector FROM faces WHERE id IN ({marks})")]
+
+
+def group_vectors(db, number: int) -> list[np.ndarray]:
+    return vectors_of(db, group_ids(db, number))
+
+
+def face_thumb(db, face_id: int, size: int = 192) -> str | None:
+    """A square crop of one face, cached by face id (a changed photo gets new face ids)."""
+    out = config.CACHE_DIR / "faces" / f"{face_id}.jpg"
+    if out.exists():
+        return str(out)
+    row = db.execute("SELECT fl.path, f.x, f.y, f.w, f.h FROM faces f JOIN files fl ON fl.id = f.file WHERE f.id = ?",
+                     (face_id,)).fetchone()
+    if not row:
+        return None
+    path, x, y, w, h = row
+    try:
+        image = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
+    except OSError:
+        return None
+    side = int(max(w, h) * 1.6)
+    cx, cy = x + w // 2, y + h // 2
+    crop = image.crop((cx - side // 2, cy - side // 2, cx + side // 2, cy + side // 2))
+    crop = crop.resize((size, size), Image.Resampling.LANCZOS)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    crop.save(out, "JPEG", quality=88)
+    return str(out)
+
+
+def best_faces(index: "FaceIndex", name: str, count: int = 1) -> list[int]:
+    """The faces in the index that look most like someone: their picture in the People view."""
+    refs = index.people.get(name)
+    if refs is None or not len(index.vectors):
+        return []
+    similarity = (index.vectors @ refs.T).max(axis=1)
+    return [int(index.face_ids[i]) for i in np.argsort(-similarity)[:count]]
+
+
+def overview(db, threshold: float, group_limit: int = 30) -> dict:
+    """Everything the People view shows: who's named, and the groups of faces waiting for a name."""
+    index = FaceIndex(db)
+    named = []
+    for name in sorted(index.people, key=str.lower):
+        best = best_faces(index, name)
+        named.append({"name": name, "photos": len(index.matches(name, threshold)),
+                      "thumb": face_thumb(db, best[0]) if best else None})
+    found = groups(db, threshold)
+    shown = []
+    for ids in found[:group_limit]:
+        files = db.execute(f"SELECT count(DISTINCT file) FROM faces WHERE id IN ({','.join(map(str, ids))})").fetchone()[0]
+        # The face the detector was surest about leads.
+        lead = [i for (i,) in db.execute(f"SELECT id FROM faces WHERE id IN ({','.join(map(str, ids))}) "
+                                         "ORDER BY score DESC, w * h DESC LIMIT 4")]
+        shown.append({"id": lead[0], "faces": len(ids), "photos": files,
+                      "thumbs": [t for t in (face_thumb(db, i) for i in lead) if t]})
+    scanned, photos = db.execute("SELECT coalesce(sum(faces_done), 0), count(*) FROM files "
+                                 "WHERE kind = 'image' AND status = 'done'").fetchone()
+    return {"named": named, "groups": shown, "more": max(0, len(found) - group_limit), "scanned": scanned,
+            "photos": photos, "faces": len(index.vectors)}
 
 
 def contact_sheet(db, face_ids: list[int], out: Path, limit: int = 8) -> Path:
