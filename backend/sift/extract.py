@@ -22,7 +22,7 @@ MIN_PAGE_TEXT = 200     # a PDF page with less text than this is embedded as a p
 MAX_PAGES = 5000
 SCALE_PAGES = 30        # pages past this don't move a query's scale (see search.meaning)
 
-# Vision soft tokens per picture (DigUp's measured choices): more for text-dense screenshots and pages.
+# Vision soft tokens per picture: more for text-dense screenshots and pages.
 PHOTO_BUDGET = 140
 SCREENSHOT_BUDGET = 280
 PAGE_BUDGET = 280
@@ -123,7 +123,7 @@ def doc_text(path: Path) -> str:
 
 def target_size(width: int, height: int, budget: int) -> tuple[int, int] | None:
     """transformers' Gemma image processor: scale to fill `budget` soft tokens (each 3 × 3 patches of 16 px) keeping
-    the aspect ratio, each side rounded down to a multiple of 48 px. (DigUp's ImageSizing, checked against Pillow.)"""
+    the aspect ratio, each side rounded down to a multiple of 48 px. (Checked against Pillow.)"""
     patch, pooling = 16, 3
     max_patches = budget * pooling * pooling
     factor = math.sqrt(max_patches * patch * patch / (height * width))

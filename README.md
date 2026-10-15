@@ -11,7 +11,7 @@ Everything runs on your machine with Google DeepMind's [EmbeddingGemma 2](https:
 on [llama.cpp](https://github.com/ggml-org/llama.cpp) (Vulkan). Nothing you index leaves it.
 
 Sift is a native Omarchy shell plugin: the search panel and the bar indicator live in `omarchy-shell` and follow
-your theme. It's inspired by, and ports parts of, [DigUp](https://github.com/ARahim3/DigUp).
+your theme.
 
 ## Install
 
@@ -97,7 +97,7 @@ folders ─► sift-indexer ─► readers (PyMuPDF, Pillow, tesseract)
 panel ──socket──► sift (daemon) ─► query vector (CPU) ─► meaning + exact words ─► results
 ```
 
-Ranking is DigUp's hybrid, tuned on its evals: each vector's similarity is put on the query's own scale per
+Ranking is a hybrid: each vector's similarity is put on the query's own scale per
 modality, only files that stand out count as meaning matches, and the share of the query's words a file contains
 adds on top (codes and numbers weigh words double).
 

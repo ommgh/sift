@@ -1,5 +1,4 @@
-"""Hybrid search: meaning (EmbeddingGemma's vectors) + words (FTS5). A port of DigUp's Searcher, whose weights and
-gates were tuned on its evals:
+"""Hybrid search: meaning (EmbeddingGemma's vectors) + words (FTS5). The weights and gates:
 
 - Meaning: each vector's cosine minus its modality's mean for this query (text and image vectors sit at different
   levels), in standard deviations of all of them. Only files that stand out (z ≥ 2) count as meaning matches, which

@@ -1,8 +1,8 @@
 #!/bin/bash
 # Builds llama-server (llama.cpp, MIT) with Vulkan, for Sift's embedding runtime.
 #
-# Pinned to the tag DigUp verified against EmbeddingGemma 2's reference vectors (b11452+ is the first with
-# text + vision + audio), plus its patch that stops non-causal embedding contexts reserving logits
+# Pinned to a tag verified against EmbeddingGemma 2's reference vectors (b11452+ is the first with
+# text + vision + audio), plus a patch that stops non-causal embedding contexts reserving logits
 # (1 MiB per token with Gemma's 262k vocabulary). Built for this machine's CPU only (GGML_NATIVE).
 #
 # Output: $SIFT_DATA/llama/bin/llama-server (default ~/.local/share/sift). Does nothing if that build is current.

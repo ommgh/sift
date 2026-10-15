@@ -1,4 +1,4 @@
-"""What gets read, and as what. Mostly DigUp's rules, which were tuned on real folders."""
+"""What gets read, and as what."""
 
 import os
 from pathlib import Path

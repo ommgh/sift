@@ -1,5 +1,5 @@
 #!/bin/bash
-# Downloads EmbeddingGemma 2 (ggml-org's Q8_0 GGUF, the revision DigUp verified) and checks it. 865 MB, once.
+# Downloads EmbeddingGemma 2 (ggml-org's Q8_0 GGUF, a pinned revision) and checks it. 865 MB, once.
 set -euo pipefail
 DATA="${SIFT_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/sift}"
 REPO=ggml-org/embeddinggemma-2-GGUF
