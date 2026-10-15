@@ -117,7 +117,8 @@ def is_skipped_path(path: Path, roots: list[Path], skip: list[str], shallow: set
     """Whether a path the watcher reports is under a skipped or hidden folder, or below a top-level-only one."""
     skip_names = {s for s in skip if "/" not in s}
     skip_paths = {Path(os.path.expanduser(s)).resolve() for s in skip if "/" in s}
-    root = next((r for r in roots if r in path.parents), None)
+    # The most specific folder holding it: ~/Documents/me (whole) inside ~/Documents (top level only).
+    root = max((r for r in roots if r in path.parents), key=lambda r: len(r.parts), default=None)
     if root is None or (root in shallow and path.parent != root):
         return True
     for part in path.relative_to(root).parts[:-1]:
