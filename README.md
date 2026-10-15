@@ -58,17 +58,15 @@ uploads anything.
 
 ## Staying out of the way
 
-Indexing is the only heavy part, and Sift keeps it gentle:
+Indexing is the only heavy part, and it's set up to run smoothly next to everything else:
 
 - the model runs on the GPU (the discrete one if there is one), in a process that's **stopped whenever there's
-  nothing to read**, so the GPU powers down and its ~1 GB is freed
-- the indexer runs at idle CPU and disk priority, capped at 3 threads and 2.6 GB (`systemd/sift-indexer.service`)
-- it **waits while on battery**, **pauses when the CPU or GPU passes 80 °C** (resuming under 68 °C), and rests
-  between files (`pace`)
+  nothing to read**, so the GPU powers down and its memory is freed
+- the indexer runs at idle CPU and disk priority: it takes only what the rest of the desktop leaves free, and backs
+  off the moment you need the machine
+- it waits while on battery (`ac_only`) and when paused (`sift pause`, or right-click the bar indicator)
 - searches use the small text model on the CPU (a query is ~20 ms), so searching never wakes the discrete GPU; it's
   unloaded after 10 idle minutes
-
-All of that is tunable in `~/.config/sift/config.toml`.
 
 ## How it works
 

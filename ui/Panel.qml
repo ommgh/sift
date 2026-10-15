@@ -200,7 +200,6 @@ Item {
     if (s.state === "indexing" || s.state === "scanning")
       return "Reading " + n(s.done) + " of " + n(total) + (s.eta ? " · ~" + Math.max(1, Math.round(s.eta / 60)) + " min" : "")
     if (s.state === "paused") return "Paused · " + n(s.done) + " of " + n(total)
-    if (s.state === "cooling") return "Cooling down · " + n(s.done) + " of " + n(total)
     if (s.state === "battery") return "Waiting for the charger · " + n(s.done) + " of " + n(total)
     return n(total) + " files"
   }

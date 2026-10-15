@@ -1,8 +1,8 @@
 """The indexer: walks the chosen folders, reads new and changed files into the index, and watches for more.
 
-It runs as its own systemd user service (sift-indexer), which caps its CPU and memory. On top of that it waits while
-on battery, while paused, and while the machine is hot, and rests between files (`power.pace`). The model runs in a
-llama-server child that's stopped whenever there's nothing to read."""
+It runs as its own systemd user service (sift-indexer) at idle CPU and disk priority, so it only uses what the rest
+of the desktop leaves free. It waits while on battery (ac_only) and while paused. The model runs in a llama-server
+child that's stopped whenever there's nothing to read."""
 
 import json
 import logging
@@ -29,8 +29,8 @@ class Status:
     """What the bar widget and panel show, written atomically to $XDG_RUNTIME_DIR/sift/status.json."""
 
     def __init__(self):
-        self.data = {"state": "starting", "done": 0, "total": 0, "errors": 0, "current": "", "temp": None,
-                     "rate": 0.0, "eta": None}
+        self.data = {"state": "starting", "done": 0, "total": 0, "errors": 0, "current": "", "rate": 0.0,
+                     "eta": None}
         self.recent: list[float] = []
 
     def update(self, **values) -> None:
@@ -108,7 +108,6 @@ class Indexer:
         self.events: queue.Queue = queue.Queue()
         self.watcher = Watcher(self.events)
         self.last_scan = 0.0
-        self.cooling = False
         self.dirty = False      # files read since the search daemon was last told
 
     # ------------------------------------------------------------ files on disk
@@ -284,13 +283,7 @@ class Indexer:
             return "paused"
         if self.cfg.power.ac_only and not power.on_ac():
             return "battery"
-        temp = power.hottest()
-        if temp is not None:
-            if temp >= self.cfg.power.max_temp:
-                self.cooling = True
-            elif temp <= self.cfg.power.resume_temp:
-                self.cooling = False
-        return "cooling" if self.cooling else None
+        return None
 
     def counts(self) -> dict:
         c = store.counts(self.db)
@@ -313,7 +306,7 @@ class Indexer:
             pending = self.next_pending() if reason is None else None
             if reason or pending is None:
                 self.server.stop_if_idle(0 if reason else IDLE_STOP)
-                self.status.update(state=reason or "idle", current="", temp=power.hottest(), rate=0, eta=None,
+                self.status.update(state=reason or "idle", current="", rate=0, eta=None,
                                    **counts)
                 if self.dirty:
                     store.bump_generation(self.db)
@@ -321,11 +314,10 @@ class Indexer:
                 time.sleep(2)
                 continue
             file_id, path, kind, _ = pending
-            started = time.time()
             remaining = counts["total"] - counts["done"]
             rate = len(self.status.recent) / max(min(300, time.time() - self.status.recent[0]), 1) * 60 \
                 if len(self.status.recent) > 3 else 0
-            self.status.update(state="indexing", temp=power.hottest(), rate=round(rate, 1),
+            self.status.update(state="indexing", rate=round(rate, 1),
                                eta=round(remaining / rate * 60) if rate else None, **counts)
             try:
                 self.read(file_id, path, kind)
@@ -340,9 +332,6 @@ class Indexer:
             if counts["done"] % 25 == 0:
                 store.bump_generation(self.db)
                 self.dirty = False
-            work = time.time() - started
-            if self.cfg.power.pace > 0:
-                time.sleep(min(work * self.cfg.power.pace, 10))
 
 
 def _png(image) -> bytes:

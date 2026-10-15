@@ -8,9 +8,6 @@ PartOf=graphical-session.target
 ExecStart=%h/.local/bin/sift serve
 Restart=on-failure
 RestartSec=5
-# The query model (310 MB) and the vectors, only while searching.
-MemoryHigh=900M
-MemoryMax=1200M
 
 [Install]
 WantedBy=graphical-session.target

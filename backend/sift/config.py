@@ -35,27 +35,19 @@ skip = []
 [power]
 # Index only when plugged in.
 ac_only = true
-# Pause indexing when the CPU gets this hot (°C), resume once it's back under resume_temp.
-max_temp = 80
-resume_temp = 68
 # CPU threads the model may use (the GPU does most of the work).
 threads = 3
 # Which device runs the model: "auto" (the discrete GPU if there is one), "dgpu", "igpu" or "cpu".
-# The CPU alone is about 3x slower and runs much hotter.
+# The CPU alone is about 3x slower.
 device = "auto"
-# Rest between files for this share of the time spent working (0.3: 30%), so heat doesn't build up.
-pace = 0.3
 """
 
 
 @dataclass
 class Power:
     ac_only: bool = True
-    max_temp: float = 80
-    resume_temp: float = 68
     threads: int = 3
     device: str = "auto"
-    pace: float = 0.3
 
 
 @dataclass

@@ -59,8 +59,6 @@ def cmd_status(args) -> None:
         line += f", {status['errors']} unreadable"
     if status.get("eta"):
         line += f", ~{round(status['eta'] / 60)} min left"
-    if status.get("temp"):
-        line += f" · {status['temp']:.0f}°C"
     print(line)
     if status.get("current"):
         print(f"  reading {status['current']}")

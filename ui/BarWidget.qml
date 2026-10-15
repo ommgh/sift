@@ -4,7 +4,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// Shows up only while Sift has something to say: indexing, resting to cool down, paused, or failing.
+// Shows up only while Sift has something to say: indexing, paused, or failing.
 BarWidget {
   id: root
   moduleName: "sift"
@@ -22,16 +22,14 @@ BarWidget {
       line = "Sift: reading " + count
       if (s.eta) line += " · ~" + Math.max(1, Math.round(s.eta / 60)) + " min left"
     } else if (root.state === "scanning") line = "Sift: looking for new files"
-    else if (root.state === "cooling") line = "Sift: resting while the machine cools down (" + Math.round(s.temp || 0) + "°C)"
     else if (root.state === "paused") line = "Sift: paused at " + count + " · right-click to resume"
     else if (root.state === "battery") line = "Sift: waits for the charger · " + count
     else if (root.state === "error") line = "Sift: " + (s.current || "error")
     else line = "Sift: " + count
-    if (root.state === "indexing" && s.temp) line += " · " + Math.round(s.temp) + "°C"
     return line
   }
 
-  visible: busy || state === "cooling" || state === "paused" || state === "error"
+  visible: busy || state === "paused" || state === "error"
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
@@ -59,7 +57,7 @@ BarWidget {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.state === "cooling" ? "" : "󰍉"
+    text: "󰍉"
     slotSize: Style.bar.statusSlot
     fontSize: Style.font.caption
     dimmed: root.state === "paused" || root.state === "battery"
