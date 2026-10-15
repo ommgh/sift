@@ -1,0 +1,211 @@
+"""Turns files into what the model reads: passages of text, and pictures sized for its vision encoder."""
+
+import io
+import math
+import os
+import re
+import subprocess
+import zipfile
+from html.parser import HTMLParser
+from pathlib import Path
+from xml.etree import ElementTree
+
+from PIL import Image, ImageOps
+
+Image.MAX_IMAGE_PIXELS = 120_000_000
+
+CHUNK_CHARS = 1800      # ~450 tokens
+CHUNK_OVERLAP = 200
+MAX_CHUNKS = 5000
+MIN_PAGE_TEXT = 200     # a PDF page with less text than this is embedded as a picture (a scan)
+MAX_PAGES = 5000
+SCALE_PAGES = 30        # pages past this don't move a query's scale (see search.meaning)
+
+# Vision soft tokens per picture (DigUp's measured choices): more for text-dense screenshots and pages.
+PHOTO_BUDGET = 140
+SCREENSHOT_BUDGET = 280
+PAGE_BUDGET = 280
+
+
+# ---------------------------------------------------------------- text
+
+def query_prompt(text: str) -> str:
+    return f"task: search result | query: {text}"
+
+
+def document_prompt(title: str, text: str) -> str:
+    return f"title: {title or 'none'} | text: {text}"
+
+
+def has_words(text: str) -> bool:
+    """Whether text is worth a vector: mostly letters, not a dump of numbers (that's matched by its exact text)."""
+    letters = sum(c.isalpha() for c in text)
+    visible = sum(not c.isspace() for c in text)
+    return visible > 0 and letters >= 20 and letters / visible >= 0.3
+
+
+def chunks(text: str, size: int = CHUNK_CHARS, overlap: int = CHUNK_OVERLAP, limit: int = MAX_CHUNKS) -> list[str]:
+    clean = re.sub(r"[ \t]+", " ", re.sub(r"\n{3,}", "\n\n", text)).strip()
+    out, start = [], 0
+    while start < len(clean) and len(out) < limit:
+        end = min(start + size, len(clean))
+        if end < len(clean):
+            space = clean.rfind(" ", start + size // 2, end)
+            if space > 0:
+                end = space
+        piece = clean[start:end].strip()
+        if piece:
+            out.append(piece)
+        if end >= len(clean):
+            break
+        nxt = max(end - overlap, start + 1)
+        space = clean.find(" ", nxt, end)
+        start = space + 1 if space > 0 else nxt
+    return out
+
+
+class _HTMLText(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.parts, self.skip = [], 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("script", "style", "noscript"):
+            self.skip += 1
+        elif tag in ("p", "br", "div", "li", "h1", "h2", "h3", "h4", "tr"):
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style", "noscript") and self.skip:
+            self.skip -= 1
+
+    def handle_data(self, data):
+        if not self.skip:
+            self.parts.append(data)
+
+
+def _xml_text(data: bytes, paragraph_tag: str) -> str:
+    root = ElementTree.fromstring(data)
+    paragraphs = []
+    for p in root.iter(paragraph_tag):
+        paragraphs.append("".join(t for t in p.itertext()))
+    return "\n".join(paragraphs)
+
+
+def _rtf_text(raw: str) -> str:
+    text = re.sub(r"\\'[0-9a-f]{2}", " ", raw)
+    text = re.sub(r"\\par[d]?", "\n", text)
+    text = re.sub(r"\{\\\*[^{}]*\}", "", text)
+    text = re.sub(r"\\[a-z]+-?\d* ?", "", text)
+    return text.replace("{", "").replace("}", "")
+
+
+def doc_text(path: Path) -> str:
+    ext = path.suffix.lower()
+    if ext == ".docx":
+        with zipfile.ZipFile(path) as z:
+            return _xml_text(z.read("word/document.xml"), "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p")
+    if ext == ".odt":
+        with zipfile.ZipFile(path) as z:
+            return _xml_text(z.read("content.xml"), "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}p")
+    raw = path.read_bytes().decode("utf-8", errors="replace")
+    if ext in (".html", ".htm"):
+        parser = _HTMLText()
+        parser.feed(raw)
+        return "".join(parser.parts)
+    if ext == ".rtf":
+        return _rtf_text(raw)
+    return raw
+
+
+# ---------------------------------------------------------------- pictures
+
+def target_size(width: int, height: int, budget: int) -> tuple[int, int] | None:
+    """transformers' Gemma image processor: scale to fill `budget` soft tokens (each 3 × 3 patches of 16 px) keeping
+    the aspect ratio, each side rounded down to a multiple of 48 px. (DigUp's ImageSizing, checked against Pillow.)"""
+    patch, pooling = 16, 3
+    max_patches = budget * pooling * pooling
+    factor = math.sqrt(max_patches * patch * patch / (height * width))
+    side = pooling * patch
+    th = int(factor * height / side) * side
+    tw = int(factor * width / side) * side
+    if th == 0 and tw == 0:
+        return None
+    max_side = (max_patches // (pooling * pooling)) * side
+    if th == 0:
+        th, tw = side, min(width // height * side, max_side)
+    elif tw == 0:
+        tw, th = side, min(height // width * side, max_side)
+    return tw, th
+
+
+def prepare_image(image: Image.Image, budget: int) -> bytes:
+    """The picture as PNG bytes at exactly the size the vision encoder takes for `budget`."""
+    image = ImageOps.exif_transpose(image)
+    if image.mode in ("RGBA", "LA", "P"):
+        rgba = image.convert("RGBA")
+        canvas = Image.new("RGB", rgba.size, (255, 255, 255))
+        canvas.paste(rgba, mask=rgba.split()[3])
+        image = canvas
+    else:
+        image = image.convert("RGB")
+    size = target_size(image.width, image.height, budget)
+    if size is None:
+        raise ValueError("too small to read")
+    image = image.resize(size, Image.Resampling.BICUBIC)
+    out = io.BytesIO()
+    image.save(out, "PNG", compress_level=1)
+    return out.getvalue()
+
+
+def open_image(path: Path) -> Image.Image:
+    image = Image.open(path)
+    image.seek(0)   # a GIF's first frame
+    image.load()
+    return image
+
+
+def ocr(source: Path | bytes) -> str:
+    """Text in a picture, by tesseract on one thread (it's for exact words: codes, errors, names)."""
+    env = dict(os.environ, OMP_THREAD_LIMIT="1")
+    try:
+        if isinstance(source, bytes):
+            result = subprocess.run(["tesseract", "stdin", "stdout", "-l", "eng", "--psm", "3"], input=source,
+                                    capture_output=True, timeout=60, env=env)
+        else:
+            result = subprocess.run(["tesseract", str(source), "stdout", "-l", "eng", "--psm", "3"],
+                                    capture_output=True, timeout=60, env=env)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    text = result.stdout.decode("utf-8", errors="replace")
+    # Drop OCR noise: lines without at least one real word.
+    lines = [line.strip() for line in text.splitlines() if re.search(r"[A-Za-z]{3,}", line)]
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------- PDFs
+
+def pdf_pages(path: Path):
+    """Yields (page number from 1, text, rendered page or None) for each page; a page with little text is rendered
+    for the vision encoder and OCR (a scan, a slide, a chart)."""
+    import pymupdf
+
+    with pymupdf.open(path) as pdf:
+        if pdf.needs_pass:
+            raise ValueError("password protected")
+        for number, page in enumerate(pdf, start=1):
+            if number > MAX_PAGES:
+                break
+            text = page.get_text("text") or ""
+            image = None
+            if len(text.strip()) < MIN_PAGE_TEXT:
+                pix = page.get_pixmap(dpi=150)
+                image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+            yield number, text, image
+
+
+def pdf_page_count(path: Path) -> int:
+    import pymupdf
+
+    with pymupdf.open(path) as pdf:
+        return pdf.page_count
