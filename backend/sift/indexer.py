@@ -58,7 +58,7 @@ class Watcher(threading.Thread):
         self.watches: dict[int, Path] = {}
         self.lock = threading.Lock()
 
-    def watch_tree(self, root: Path, skip: list[str]) -> None:
+    def watch_tree(self, root: Path, skip: list[str], recursive: bool = True) -> None:
         stack = [root]
         while stack:
             folder = stack.pop()
@@ -69,7 +69,7 @@ class Watcher(threading.Thread):
                 entries = list(os.scandir(folder))
             except OSError:
                 continue
-            for entry in entries:
+            for entry in entries if recursive else []:
                 if entry.is_dir(follow_symlinks=False) and not entry.name.startswith(".") \
                         and entry.name not in rules.SKIPPED_FOLDERS and entry.name not in skip:
                     stack.append(Path(entry.path))
@@ -118,7 +118,7 @@ class Indexer:
         seen: set[str] = set()
         self.db.execute("BEGIN")
         for root in self.cfg.folders:
-            for path, kind, stat in rules.walk(root, self.cfg.skip):
+            for path, kind, stat in rules.walk(root, self.cfg.skip, root not in self.cfg.shallow):
                 seen.add(str(path))
                 store.upsert_file(self.db, path, kind, stat.st_mtime, stat.st_size)
         for (path,) in self.db.execute("SELECT path FROM files").fetchall():
@@ -137,7 +137,7 @@ class Indexer:
                 break
             changed = True
             if what == "dir":
-                if not rules.is_skipped_path(path / "x", self.cfg.folders, self.cfg.skip):
+                if not rules.is_skipped_path(path / "x", self.cfg.folders, self.cfg.skip, self.cfg.shallow):
                     self.watcher.watch_tree(path, self.cfg.skip)
                     for file, kind, stat in rules.walk(path, self.cfg.skip):
                         store.upsert_file(self.db, file, kind, stat.st_mtime, stat.st_size)
@@ -147,7 +147,7 @@ class Indexer:
             elif what == "gone":
                 store.remove_file(self.db, str(path))
             elif what == "file":
-                if path.name.startswith(".") or rules.is_skipped_path(path, self.cfg.folders, self.cfg.skip):
+                if path.name.startswith(".") or rules.is_skipped_path(path, self.cfg.folders, self.cfg.skip, self.cfg.shallow):
                     continue
                 kind = rules.kind_of(path, rules.project_root_of(path, self.cfg.folders))
                 try:
@@ -274,7 +274,7 @@ class Indexer:
                 self.server.stop()
                 self.server = LlamaServer(media=True, device=device, threads=self.cfg.power.threads, name="indexer")
             for root in self.cfg.folders:
-                self.watcher.watch_tree(root, self.cfg.skip)
+                self.watcher.watch_tree(root, self.cfg.skip, root not in self.cfg.shallow)
             self.scan()
 
     def gate(self) -> str | None:
@@ -292,7 +292,7 @@ class Indexer:
 
     def run(self) -> None:
         for root in self.cfg.folders:
-            self.watcher.watch_tree(root, self.cfg.skip)
+            self.watcher.watch_tree(root, self.cfg.skip, root not in self.cfg.shallow)
         self.watcher.start()
         self.scan()
         idle_since = time.time()

@@ -29,6 +29,9 @@ DEFAULT_CONFIG = """\
 # Folders to search, indexed in this order.
 folders = ["~/Documents", "~/Downloads", "~/Pictures"]
 
+# Of those, folders read without their subfolders (only the files directly in them).
+top_level_only = []
+
 # Folder names or paths (with ~) to leave out, on top of the built-in rules.
 skip = []
 
@@ -54,6 +57,7 @@ class Power:
 class Config:
     folders: list[Path] = field(default_factory=list)
     skip: list[str] = field(default_factory=list)
+    shallow: set[Path] = field(default_factory=set)
     power: Power = field(default_factory=Power)
 
 
@@ -68,4 +72,6 @@ def load() -> Config:
     raw = tomllib.loads(CONFIG_FILE.read_text())
     power = Power(**{k: v for k, v in raw.get("power", {}).items() if k in Power.__dataclass_fields__})
     folders = [Path(os.path.expanduser(f)).resolve() for f in raw.get("folders", [])]
-    return Config(folders=[f for f in folders if f.is_dir()], skip=list(raw.get("skip", [])), power=power)
+    shallow = {Path(os.path.expanduser(f)).resolve() for f in raw.get("top_level_only", [])}
+    return Config(folders=[f for f in folders if f.is_dir()], skip=list(raw.get("skip", [])), shallow=shallow,
+                  power=power)

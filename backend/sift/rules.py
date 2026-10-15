@@ -60,8 +60,8 @@ def is_project(folder: Path, names: set[str]) -> bool:
     return any(marker in names for marker in PROJECT_MARKERS)
 
 
-def walk(root: Path, skip: list[str]):
-    """Yields (path, kind, stat) for every file under root Sift reads."""
+def walk(root: Path, skip: list[str], recursive: bool = True):
+    """Yields (path, kind, stat) for every file under root Sift reads (directly in root, when not recursive)."""
     skip_names = {s for s in skip if "/" not in s}
     skip_paths = {Path(os.path.expanduser(s)).resolve() for s in skip if "/" in s}
     stack = [(root, False)]
@@ -79,7 +79,8 @@ def walk(root: Path, skip: list[str]):
             try:
                 if entry.is_dir(follow_symlinks=False):
                     path = Path(entry.path)
-                    if entry.name in SKIPPED_FOLDERS or entry.name in skip_names or path in skip_paths:
+                    if not recursive or entry.name in SKIPPED_FOLDERS or entry.name in skip_names \
+                            or path in skip_paths:
                         continue
                     stack.append((path, in_project))
                 elif entry.is_file(follow_symlinks=False):
@@ -112,12 +113,12 @@ def project_root_of(path: Path, roots: list[Path]) -> bool:
     return False
 
 
-def is_skipped_path(path: Path, roots: list[Path], skip: list[str]) -> bool:
-    """Whether a path the watcher reports is under a skipped or hidden folder."""
+def is_skipped_path(path: Path, roots: list[Path], skip: list[str], shallow: set[Path] = frozenset()) -> bool:
+    """Whether a path the watcher reports is under a skipped or hidden folder, or below a top-level-only one."""
     skip_names = {s for s in skip if "/" not in s}
     skip_paths = {Path(os.path.expanduser(s)).resolve() for s in skip if "/" in s}
     root = next((r for r in roots if r in path.parents), None)
-    if root is None:
+    if root is None or (root in shallow and path.parent != root):
         return True
     for part in path.relative_to(root).parts[:-1]:
         if part.startswith(".") or part in SKIPPED_FOLDERS or part in skip_names:
