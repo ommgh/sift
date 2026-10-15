@@ -231,6 +231,10 @@ def cmd_shortcut(args) -> None:
         print(f"{combo} opens Sift" + (f" (it was “{replaced}”; sift shortcut off gives it back)" if replaced else ""))
     elif args.action == "off":
         print("removed" if shortcut.remove() else "no shortcut written by sift (a binding you wrote stays as it is)")
+    elif args.action == "refresh":   # install.sh: rewrite Sift's block with the current command
+        combo, managed = shortcut.current()
+        if combo and managed:
+            shortcut.bind(combo)
     elif args.action == "pick":
         from . import setup
         setup.run("shortcut")
@@ -280,7 +284,7 @@ def main() -> None:
     p.add_argument("paths", nargs="*")
     p.add_argument("--top-level", action="store_true", help="add: only the files directly in it")
     p = sub.add_parser("shortcut", help="the key that opens Sift: show, set, pick, off")
-    p.add_argument("action", nargs="?", default="show", choices=["show", "set", "pick", "off"])
+    p.add_argument("action", nargs="?", default="show", choices=["show", "set", "pick", "off", "refresh"])
     p.add_argument("combo", nargs="*", help='set: e.g. "SUPER + S"')
     p = sub.add_parser("setup", help="the first-run questions again: folders, shortcut, people")
     p.add_argument("only", nargs="?", choices=["folders", "shortcut", "people"])

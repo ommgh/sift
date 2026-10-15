@@ -1,9 +1,10 @@
 {
   "schemaVersion": 1,
-  "id": "sift",
+  "id": "io.github.ommgh.sift",
   "name": "Sift",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Om Mishra",
+  "license": "MIT",
   "description": "Search your files by what's in them: documents, PDFs, pictures and screenshots, on-device",
   "kinds": [
     "overlay",

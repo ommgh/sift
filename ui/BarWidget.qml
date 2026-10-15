@@ -7,7 +7,7 @@ import qs.Ui
 // Shows up only while Sift has something to say: indexing, paused, failing, or not set up yet (a click starts setup).
 BarWidget {
   id: root
-  moduleName: "sift"
+  moduleName: "io.github.ommgh.sift"
 
   property var status: ({ state: "stopped" })
   readonly property string state: status.state || "stopped"
@@ -83,7 +83,7 @@ BarWidget {
       if (root.needsSetup)
         Quickshell.execDetached(["omarchy-launch-floating-terminal-with-presentation", Util.shellQuote(root.pluginDir + "/install.sh")])
       else if (mouseButton === Qt.RightButton) Quickshell.execDetached([root.sift, "toggle"])
-      else if (root.bar) root.bar.run("omarchy-shell shell toggle sift '{}'")
+      else if (root.bar) root.bar.run("omarchy-shell shell toggle io.github.ommgh.sift '{}'")
     }
   }
 }

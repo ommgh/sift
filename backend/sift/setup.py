@@ -199,9 +199,9 @@ def doctor(bench: bool = False) -> None:
     try:
         plugins = json.loads(subprocess.run(["omarchy", "plugin", "list", "--json"], capture_output=True, text=True,
                                             timeout=10).stdout)
-        mine = next((p for p in plugins if p.get("id") == "sift"), None)
+        mine = next((p for p in plugins if p.get("id") == shortcut.PLUGIN_ID), None)
         _ok(bool(mine and mine.get("enabled")), "shell plugin " + ("enabled" if mine and mine.get("enabled") else
-                                                                    "not enabled: omarchy plugin enable sift"))
+                                                                    f"not enabled: omarchy plugin enable {shortcut.PLUGIN_ID}"))
     except (OSError, ValueError, subprocess.TimeoutExpired):
         pass
     combo, managed = shortcut.current()

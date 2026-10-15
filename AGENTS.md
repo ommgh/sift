@@ -22,7 +22,7 @@ photo, screenshot, PDF page or document that matches, by meaning or by exact wor
 ## Layout
 
 ```
-manifest.json          Omarchy plugin manifest: id "sift", kinds overlay + bar-widget, keepLoaded
+manifest.json          Omarchy plugin manifest: id "io.github.ommgh.sift" (plain "sift" before 0.2; install.sh migrates), kinds overlay + bar-widget, keepLoaded
 ui/Panel.qml           search overlay (Quickshell), styled with omarchy-shell's [menu] tokens; first-run setup state
 ui/Manage.qml          Ctrl+S view inside the panel: Folders tab (list, browse, add/remove, subfolders) and People
                        tab (face groups as thumbnails, type a name, rename/merge, forget, hide, on/off)
@@ -67,7 +67,7 @@ Runtime files: index `~/.local/share/sift/index.db`, models and llama build in `
 ## How it works
 
 - **Distribution:** marketplace users run `omarchy plugin add https://github.com/ommgh/sift --enable` (clones into
-  ~/.config/omarchy/plugins/sift; Omarchy never runs install hooks), then `install.sh` there. Keep the repo free of
+  ~/.config/omarchy/plugins/io.github.ommgh.sift; Omarchy never runs install hooks), then `install.sh` there. Keep the repo free of
   symlinks and run `omarchy plugin validate .` before pushing.
 - **Model:** Google DeepMind's EmbeddingGemma 2 (Q8_0 GGUF + mmproj) on llama.cpp's llama-server. One embedding
   space for text and images. Indexing runs on the GPU (`device = "auto"`: discrete, else integrated, else CPU; the

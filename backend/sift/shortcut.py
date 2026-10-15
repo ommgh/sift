@@ -12,7 +12,8 @@ from pathlib import Path
 BINDINGS = Path(os.environ.get("SIFT_BINDINGS", Path.home() / ".config/hypr/bindings.lua"))
 BEGIN = "-- Sift: begin (written by `sift shortcut`; change or remove it with that command)"
 END = "-- Sift: end"
-COMMAND = "omarchy-shell shell toggle sift '{}'"
+PLUGIN_ID = "io.github.ommgh.sift"
+COMMAND = f"omarchy-shell shell toggle {PLUGIN_ID} '{{}}'"
 
 MODS = {"SHIFT": 1, "CTRL": 4, "ALT": 8, "SUPER": 64}
 ALIASES = {"CONTROL": "CTRL", "WIN": "SUPER", "MOD4": "SUPER", "META": "SUPER", "CMD": "SUPER", "OPTION": "ALT"}
@@ -79,7 +80,7 @@ def current() -> tuple[str | None, bool]:
         found = re.search(r'o\.bind\("([^"]+)"', block.group(1))
         return (found.group(1) if found else None), True
     for line in _without_block(text).splitlines():
-        found = re.match(r'\s*o\.bind\("([^"]+)".*toggle sift\b', line)
+        found = re.match(r'\s*o\.bind\("([^"]+)".*toggle (?:io\.github\.ommgh\.)?sift\b', line)
         if found:
             return found.group(1), False
     return None, False
@@ -105,10 +106,10 @@ def bind(combo: str) -> str | None:
     combo_now, managed = current()
     if combo_now and not managed:
         raise RuntimeError(f"{BINDINGS} already opens Sift with {combo_now} (a line you wrote): edit it there")
-    if managed and combo_now == combo:
+    if managed and combo_now == combo and COMMAND in _text():
         return _replaced_note()   # already so; its unbind (if any) stays
+    replaced = _replaced_note() if managed and combo_now == combo else used_by(combo)
     text = _without_block(_text())
-    replaced = used_by(combo)
     lines = [BEGIN]
     if replaced:
         lines.append(f"-- {combo} was \"{replaced}\": unbound while Sift has it")

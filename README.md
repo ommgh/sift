@@ -29,15 +29,15 @@ your theme.
 
 ```bash
 omarchy plugin add https://github.com/ommgh/sift --enable
-~/.config/omarchy/plugins/sift/install.sh
+~/.config/omarchy/plugins/io.github.ommgh.sift/install.sh
 ```
 
 The second line does the rest, in about 3 minutes the first time: it installs the packages it needs (asking first),
 builds llama.cpp for your machine while the model (865 MB, checksummed) and the Python backend download, asks which
 folders to read and which key opens Sift, and starts two user services. Skipped it? The Sift icon in the bar, or
-`omarchy-shell shell toggle sift`, offers to run it.
+`omarchy-shell shell toggle io.github.ommgh.sift`, offers to run it.
 
-Run it again to update, after `omarchy plugin update sift`. `sift doctor` shows what Sift runs on and what's missing.
+Run it again to update, after `omarchy plugin update io.github.ommgh.sift`. `sift doctor` shows what Sift runs on and what's missing.
 
 ### The shortcut
 
@@ -173,8 +173,8 @@ adds on top (codes and numbers weigh words double).
 ## Uninstall
 
 ```bash
-~/.config/omarchy/plugins/sift/uninstall.sh   # --keep-index keeps the index, models and settings
-omarchy plugin remove sift
+~/.config/omarchy/plugins/io.github.ommgh.sift/uninstall.sh   # --keep-index keeps the index, models and settings
+omarchy plugin remove io.github.ommgh.sift
 ```
 
 It removes the services, the shortcut, the launcher entry and the `sift` command, and gives back the key Sift took.

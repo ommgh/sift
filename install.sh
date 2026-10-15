@@ -1,7 +1,7 @@
 #!/bin/bash
 # Sets Sift up for this user: installs what's missing, builds llama-server while the model and the Python backend
 # download, asks which folders to read and which key opens Sift (first run), and starts the two services. Safe to run
-# again: that's also how to update (after `omarchy plugin update sift` or `git pull`).
+# again: that's also how to update (after `omarchy plugin update io.github.ommgh.sift` or `git pull`).
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
 REPO="$PWD"
@@ -9,6 +9,7 @@ DATA="${SIFT_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/sift}"
 LOGS="${XDG_STATE_HOME:-$HOME/.local/state}/sift"
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/sift/config.toml"
 PLUGINS="$HOME/.config/omarchy/plugins"
+ID=io.github.ommgh.sift
 mkdir -p "$DATA" "$LOGS"
 
 FIRST_RUN=false
@@ -80,9 +81,14 @@ SIFT="$HOME/.local/bin/sift"
 
 # ------------------------------------------------------------ the plugin and its launcher entry
 # Added with `omarchy plugin add`, Sift already sits in the plugins folder; a clone elsewhere gets linked there.
-if [[ $REPO != "$PLUGINS/sift" && ! -e $PLUGINS/sift ]]; then
+# Before 0.2 the plugin id was plain "sift".
+if [[ -L $PLUGINS/sift && $(readlink -f "$PLUGINS/sift") == "$REPO" ]]; then
+  omarchy plugin disable sift > /dev/null 2>&1 || true
+  rm "$PLUGINS/sift"
+fi
+if [[ $REPO != "$PLUGINS/$ID" && ! -e $PLUGINS/$ID ]]; then
   mkdir -p "$PLUGINS"
-  ln -s "$REPO" "$PLUGINS/sift"
+  ln -s "$REPO" "$PLUGINS/$ID"
 fi
 mkdir -p "$HOME/.local/share/applications"
 cat > "$HOME/.local/share/applications/sift.desktop" <<'EOF'
@@ -91,7 +97,7 @@ Type=Application
 Name=Sift
 GenericName=File search
 Comment=Find files by what's in them
-Exec=omarchy-shell shell toggle sift '{}'
+Exec=omarchy-shell shell toggle io.github.ommgh.sift '{}'
 Icon=system-search
 Terminal=false
 Categories=Utility;
@@ -101,6 +107,8 @@ EOF
 # ------------------------------------------------------------ first run: what to read, which key
 if $FIRST_RUN && $ASK; then
   "$SIFT" setup
+else
+  "$SIFT" shortcut refresh > /dev/null 2>&1 || true
 fi
 
 # ------------------------------------------------------------ services
@@ -115,7 +123,7 @@ systemctl --user restart sift.service sift-indexer.service
 
 if command -v omarchy-shell > /dev/null; then
   omarchy-shell shell rescanPlugins > /dev/null 2>&1 || true
-  omarchy plugin enable sift > /dev/null 2>&1 || true
+  omarchy plugin enable "$ID" > /dev/null 2>&1 || true
   # The panel stays loaded between uses, so new panel code only loads with a fresh shell.
   omarchy restart shell > /dev/null 2>&1 || true
 fi
@@ -128,5 +136,5 @@ case $combo in
 esac
 echo "Folders and people: Ctrl+S in the panel. Everything else: sift --help, sift doctor."
 if $FIRST_RUN && [[ -n ${WAYLAND_DISPLAY:-} ]]; then
-  (sleep 2 && omarchy-shell shell toggle sift '{}' > /dev/null 2>&1) &
+  (sleep 2 && omarchy-shell shell toggle "$ID" '{}' > /dev/null 2>&1) &
 fi
