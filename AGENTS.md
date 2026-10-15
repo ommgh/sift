@@ -115,6 +115,10 @@ Gotchas learned the hard way:
 - Don't hold long SQLite transactions in the indexer ("database is locked" for the daemon).
 - llama-server randomizes its media marker; it's pinned via env (`LLAMA_MEDIA_MARKER="<__media__>"`).
 - Watcher paths map to the most specific configured folder (a recursive folder nested in a top-level-only one).
+- The plugin marketplace re-scans every commit (omacom/omarchy-plugin-marketplace,
+  scripts/security-baseline-analysis.mjs). build-llama.sh must keep the literal 40-char SHA in its fetch and in a
+  `checkout --detach <sha>` that is `&&`-chained all the way to the cmake build, or it's flagged
+  `remote-git-execution-unpinned`. Bumping llama.cpp means changing COMMIT and both literal SHAs.
 - GNOME's `localsearch-3` may also be indexing on the machine (duplicate work), unrelated to Sift.
 
 ## Measured (MSI Bravo 15: Ryzen 5 5600H, 15 GB, RX 5500M 4 GB + Vega iGPU)
