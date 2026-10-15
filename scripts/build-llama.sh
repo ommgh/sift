@@ -25,8 +25,12 @@ if [[ -x "$OUT/bin/llama-server" && "$(cat "$OUT/BUILD" 2>/dev/null)" == "$STAMP
 fi
 
 mkdir -p "$OUT"
-if [[ ! -d "$SOURCE" ]]; then
-  git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$TAG" https://github.com/ggml-org/llama.cpp "$SOURCE"
+# Fetched by its exact commit (a tag can move), and checked out detached.
+if [[ ! -d "$SOURCE/.git" ]]; then
+  rm -rf "$SOURCE"
+  git init --quiet "$SOURCE"
+  git -C "$SOURCE" fetch --quiet --depth 1 https://github.com/ggml-org/llama.cpp "$COMMIT"
+  git -C "$SOURCE" -c advice.detachedHead=false checkout --quiet --detach "$COMMIT"
 fi
 if [[ "$(git -C "$SOURCE" rev-parse HEAD)" != "$COMMIT" ]]; then
   echo "llama.cpp's $TAG isn't commit $COMMIT: not building it" >&2
