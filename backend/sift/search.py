@@ -191,8 +191,8 @@ class Searcher:
             "SELECT loc, modality, text FROM segments WHERE id = ?", (segment_id,)).fetchone()
         path = Path(f["path"])
         snippet = " ".join(word_snippet.split()) if word_snippet else ""
-        if not snippet and text and f["kind"] in ("doc", "pdf"):
-            snippet = " ".join(text.split())[:220]
+        if not snippet and text:
+            snippet = " ".join(text.split())[:240]   # a passage, a page, or a screenshot's OCR
         home = str(Path.home())
         folder = str(path.parent)
         return {
