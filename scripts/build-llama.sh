@@ -29,8 +29,9 @@ mkdir -p "$OUT"
 if [[ ! -d "$SOURCE/.git" ]]; then
   rm -rf "$SOURCE"
   git init --quiet "$SOURCE"
-  git -C "$SOURCE" fetch --quiet --depth 1 https://github.com/ggml-org/llama.cpp "$COMMIT"
-  git -C "$SOURCE" -c advice.detachedHead=false checkout --quiet --detach "$COMMIT"
+  # The SHA is written out (not $COMMIT) so the marketplace's checks can see what's fetched; keep both in step.
+  git -C "$SOURCE" fetch --quiet --depth 1 https://github.com/ggml-org/llama.cpp 4d756bc72bf00a4aacf410ae15a2d315f3db400d
+  git -C "$SOURCE" -c advice.detachedHead=false checkout --quiet --detach 4d756bc72bf00a4aacf410ae15a2d315f3db400d
 fi
 if [[ "$(git -C "$SOURCE" rev-parse HEAD)" != "$COMMIT" ]]; then
   echo "llama.cpp's $TAG isn't commit $COMMIT: not building it" >&2
