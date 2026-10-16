@@ -24,6 +24,16 @@ SOCKET = RUNTIME_DIR / "sift.sock"
 STATUS_FILE = RUNTIME_DIR / "status.json"
 PAUSE_FILE = STATE_DIR / "paused"
 
+
+def make_private() -> None:
+    """What Sift keeps holds what's in your files (passages, page renders, face crops): only you may read it, whatever
+    the umask. New files come out 0600 and folders 0700; folders from before this get tightened."""
+    os.umask(0o077)
+    for folder in (DATA_DIR, CACHE_DIR, STATE_DIR):
+        if folder.is_dir():
+            folder.chmod(0o700)
+
+
 DEFAULT_CONFIG = """\
 # Sift settings. Saved changes are picked up by the indexer within a few seconds.
 

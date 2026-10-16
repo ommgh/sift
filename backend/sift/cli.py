@@ -255,6 +255,7 @@ def cmd_pause(args) -> None:
 
 
 def main() -> None:
+    config.make_private()
     parser = argparse.ArgumentParser(prog="sift", description="Search your files by what's in them.")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("index", help="run the indexer (the sift-indexer service)")

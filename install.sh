@@ -10,7 +10,9 @@ LOGS="${XDG_STATE_HOME:-$HOME/.local/state}/sift"
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/sift/config.toml"
 PLUGINS="$HOME/.config/omarchy/plugins"
 ID=io.github.ommgh.sift
+# Sift's data holds what's in your files (and its logs, file names): readable by you alone.
 mkdir -p "$DATA" "$LOGS"
+chmod 700 "$DATA" "$LOGS"
 
 FIRST_RUN=false
 [[ -f $CONFIG ]] || FIRST_RUN=true

@@ -62,7 +62,9 @@ uninstall.sh           services, shortcut block, launcher entry, wrapper, data (
 ```
 
 Runtime files: index `~/.local/share/sift/index.db`, models and llama build in `~/.local/share/sift/`, thumbnails in
-`~/.cache/sift/thumbs`, socket and status in `$XDG_RUNTIME_DIR/sift/`, pause flag in `~/.local/state/sift/paused`.
+`~/.cache/sift/thumbs`, socket and status in `$XDG_RUNTIME_DIR/sift/`, pause flag in `~/.local/state/sift/paused`. All of it is private
+(the index holds file text): `config.make_private()` sets umask 077 and makes the data, cache and state folders 0700
+on every `sift` command, `store.connect()` makes the index 0600, the units set `UMask=0077` (marketplace review, 2026-10-16).
 
 ## How it works
 

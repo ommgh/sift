@@ -5,6 +5,8 @@ After=graphical-session.target
 PartOf=graphical-session.target
 
 [Service]
+# The index, thumbnails and face crops hold what's in your files: readable by you alone.
+UMask=0077
 ExecStart=%h/.local/bin/sift index
 Restart=always
 RestartSec=30

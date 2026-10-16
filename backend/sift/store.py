@@ -45,6 +45,10 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(name, body, tokenize = 'porter
 def connect(path: Path = config.INDEX_DB) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(path, timeout=30, isolation_level=None, check_same_thread=False)
+    # Holds the text of your files: yours alone, also where SIFT_INDEX puts it outside Sift's folder.
+    for f in (path, path.with_name(path.name + "-wal"), path.with_name(path.name + "-shm")):
+        if f.exists():
+            f.chmod(0o600)
     db.execute("PRAGMA journal_mode = WAL")
     db.execute("PRAGMA synchronous = NORMAL")
     db.execute("PRAGMA foreign_keys = ON")
