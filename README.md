@@ -27,6 +27,8 @@ your theme.
 
 ## Install
 
+Sift is listed and verified on the [Omarchy plugin marketplace](https://plugins.omarchy.org/plugin.html?id=io.github.ommgh.sift).
+
 ```bash
 omarchy plugin add https://github.com/ommgh/sift --enable
 ~/.config/omarchy/plugins/io.github.ommgh.sift/install.sh

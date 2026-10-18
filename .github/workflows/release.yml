@@ -1,0 +1,24 @@
+# A version tag pushed to a commit on main becomes a GitHub release, with its CHANGELOG.md section as the notes.
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          fetch-depth: 0   # to check the tag is on main
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          .github/scripts/release-notes.sh "$TAG" > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" --verify-tag --title "Sift ${TAG#v}" --notes-file "$RUNNER_TEMP/notes.md"

@@ -4,14 +4,15 @@ Sift is on-device semantic file search for Omarchy (Arch + Hyprland), shipped as
 Press Super+S, describe a file ("the clause about pets in the lease", "me in the mountains", "INV-2041"), and get the
 photo, screenshot, PDF page or document that matches, by meaning or by exact words. Nothing leaves the machine.
 
-- Repo: github.com/ommgh/sift (public, MIT), branch `main`. Landing page lives in a separate private repo,
+- Repo: github.com/ommgh/sift (public, MIT). `main` = releases only, `dev` = the next release (see "Git workflow and
+  releases"). Listed on https://plugins.omarchy.org/plugin.html?id=io.github.ommgh.sift. Landing page lives in a separate private repo,
   `ommgh/sift-site` (see `../sift-site/AGENTS.md`), deployed at https://sift.ommishra.in.
 - Status (2026-10-18): base version done and in daily use on the author's laptop. Next sessions improve it.
 
 ## Working agreements
 
-- Commit straight to `main` and push at meaningful milestones. No branches or PRs. End commit messages with the
-  `Co-Authored-By` line the harness asks for.
+- Branches and PRs, never direct pushes to `main` or `dev` (both are protected; see "Git workflow and releases").
+  End commit messages with the `Co-Authored-By` line the harness asks for, PR bodies with the Claude Code line.
 - No thermal pausing, pacing, or CPU/memory caps. The goal is "runs smoothly without crashing", not throttling;
   the indexer already runs at idle CPU/IO priority. Don't reintroduce temperature checks or resource limits.
 - Ask before big product decisions; improving on the original design is welcome.
@@ -58,12 +59,58 @@ install.sh             missing packages (asks, then omarchy pkg add); build ∥ 
                        symlinked in (the author's dev setup). Re-run = update. Panel/bar launch it in
                        omarchy-launch-floating-terminal-with-presentation when ~/.local/bin/sift is missing.
 uninstall.sh           services, shortcut block, launcher entry, wrapper, data (unless --keep-index)
-.github/               README banners (light/dark, rendered from sift-site /card/banner*), FUNDING.yml
+backend/tests/         pytest: the privacy and safety guarantees (hostile files, permissions, escaping)
+CHANGELOG.md           Unreleased (on dev) + one dated section per release; release notes come from it
+.github/               README banners (light/dark, rendered from sift-site /card/banner*), FUNDING.yml, PR template,
+                       workflows/checks.yml (tests on 3.12 + 3.14, repo rules), workflows/release.yml (tag → release),
+                       scripts/check-repo.sh, scripts/release-notes.sh. .github/ and tests/ aren't marketplace-scanned
 ```
 
 Runtime files: index `~/.local/share/sift/index.db`, models and llama build in `~/.local/share/sift/`, thumbnails in
 `~/.cache/sift/thumbs`, sockets (the daemon's, and each llama-server's `llama-<name>-<pid>.sock`) and status in
 `$XDG_RUNTIME_DIR/sift/`, pause flag in `~/.local/state/sift/paused`.
+
+## Git workflow and releases
+
+Why: the marketplace verified one exact commit (`listingValidatedCommit`, now v0.2.0 = a239f3a). Any new commit on
+`main` turns the listing "Update unverified" until a maintainer re-approves it, and `omarchy plugin add`/`update`
+install `main`'s HEAD (the default branch). So `main` only ever moves by a release; everything else waits on `dev`.
+
+- Branches: `main` (releases, each a `vX.Y.Z` tag), `dev` (integration for the next release). Work happens on short
+  branches off `dev`: `feat/…`, `fix/…`, `docs/…`, `chore/…`, `ci/…`. Hotfixes: `hotfix/…` off `main`.
+- Both `main` and `dev` are protected, admins included: changes land by PR only, with the checks `repo rules`,
+  `tests (python 3.12)` and `tests (python 3.14)` green; no force pushes or deletions. Merged branches auto-delete.
+- PRs into `dev`: squash merge, title = the change. Each adds a line to CHANGELOG.md under Unreleased (Added /
+  Changed / Fixed / Security). Use the PR template's checklist. Claude opens PRs; the author merges them (the
+  harness refuses agent self-merges without review). To stack work while a PR waits, branch off that PR's branch
+  and still target `dev`; once the lower PR is squash-merged the upper one merges cleanly (identical changes).
+- The version stays the last release's on `dev` until release prep; `check-repo.sh` requires manifest.json,
+  backend/pyproject.toml and uv.lock to agree.
+- Local checks before a PR: `.github/scripts/check-repo.sh`; tests with
+  `(cd backend && UV_PROJECT_ENVIRONMENT=~/.cache/sift-dev/venv uv run --locked pytest -q)` (never a `.venv` inside
+  the repo: it's the author's live plugin folder, and Omarchy rejects plugin folders containing symlinks);
+  `omarchy plugin validate .`.
+- The author's machine runs whatever branch is checked out in ~/projects/omarchy/sift (the plugin folder is a
+  symlink to it), so dev work is dogfooded; restart the services/shell after switching branches.
+
+Releasing X.Y.Z (only when the author asks; semver: features → minor, fixes → patch):
+1. Branch `release/vX.Y.Z` off `dev`: set the version in manifest.json and backend/pyproject.toml, run `uv lock`,
+   rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`, add a fresh empty `## [Unreleased]` above it, update the
+   compare links at the bottom. PR into `dev`, merge.
+2. Re-run install.sh from `dev` on this machine, `sift doctor`, real searches, `omarchy plugin validate .`.
+3. PR `dev` → `main` titled "Release vX.Y.Z", merged with **Create a merge commit** (not squash: `dev` must stay an
+   ancestor of `main`). The `repo rules` check requires the dated changelog section on PRs into `main`.
+4. Tag the merge commit and push the tag: `git tag -a vX.Y.Z origin/main -m "Sift X.Y.Z" && git push origin vX.Y.Z`.
+   workflows/release.yml checks the tag matches the version and is on `main`, then publishes the GitHub release
+   from the changelog section.
+5. Marketplace: open https://github.com/omacom/omarchy-plugin-marketplace/issues/new?template=verify-plugin.yml,
+   choose "Verify and publish a newer upstream commit", give `io.github.ommgh.sift`, `https://github.com/ommgh/sift`
+   and the full 40-char SHA of `main`'s HEAD. Answer bot or reviewer findings with a fix release; a maintainer then
+   applies `approved-and-verified` and the listing moves to the new snapshot.
+6. Update ../AGENTS.md (workspace notes): the verified snapshot and the date.
+
+Hotfix: `hotfix/…` off `main` with the fix, a patch version bump and a dated changelog section → PR into `main`
+(merge commit) → tag → marketplace verification as above → PR `main` → `dev` (merge commit) to bring it back.
 
 ## Hardening (keep it: the marketplace's reviewers check for exactly these)
 
@@ -123,12 +170,14 @@ hostile file in Downloads, were the attacker. Invariants:
 ## Dev loop
 
 ```bash
-(cd backend && UV_PROJECT_ENVIRONMENT=~/.local/share/sift/venv uv sync)   # deps (or just re-run install.sh)
+(cd backend && UV_PROJECT_ENVIRONMENT=~/.local/share/sift/venv uv sync --locked --no-dev)   # deps (or re-run install.sh)
 systemctl --user restart sift sift-indexer        # after backend changes
 omarchy restart shell                             # after ANY ui/*.qml change: the panel is keepLoaded
 sift status; sift search "…"; journalctl --user -u sift-indexer -f
 SIFT_INDEX=/tmp/test.db sift index                # a throwaway index for experiments
 ```
+
+Tests and repo rules: see "Git workflow and releases" (the dev venv lives in ~/.cache/sift-dev, never in the repo).
 
 Gotchas learned the hard way:
 - Use anchored `pkill -f '^…'` patterns; a loose pattern once killed its own shell and the real services.
