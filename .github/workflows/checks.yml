@@ -1,0 +1,35 @@
+# Runs on every pull request and on every push to dev and main. Both jobs are required checks on those branches.
+name: checks
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: tests (python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.14"]   # the oldest Sift supports, and Arch's
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+      - name: Backend tests
+        working-directory: backend
+        run: uv run --locked --python ${{ matrix.python }} pytest -q
+
+  repo:
+    name: repo rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+      - name: Repository rules
+        env:
+          BASE_REF: ${{ github.base_ref || github.ref_name }}
+        run: .github/scripts/check-repo.sh
