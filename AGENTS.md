@@ -83,7 +83,9 @@ install `main`'s HEAD (the default branch). So `main` only ever moves by a relea
 - PRs into `dev`: squash merge, title = the change. Each adds a line to CHANGELOG.md under Unreleased (Added /
   Changed / Fixed / Security). Use the PR template's checklist. Claude opens PRs; the author merges them (the
   harness refuses agent self-merges without review). To stack work while a PR waits, branch off that PR's branch
-  and still target `dev`; once the lower PR is squash-merged the upper one merges cleanly (identical changes).
+  and still target `dev`. A squash merge gives `dev` new commits, so the upper PR then conflicts with its own lower
+  commits: replay only its own work with `git fetch && git rebase --onto origin/dev <old lower-branch tip> <upper>`,
+  re-run the checks and `git push --force-with-lease` (feature branches only; `main`/`dev` refuse force pushes).
 - The version stays the last release's on `dev` until release prep; `check-repo.sh` requires manifest.json,
   backend/pyproject.toml and uv.lock to agree.
 - Local checks before a PR: `.github/scripts/check-repo.sh`; tests with
