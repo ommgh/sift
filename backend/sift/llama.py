@@ -3,14 +3,13 @@ model's memory (and the discrete GPU's power) is only spent while it's used."""
 
 import atexit
 import base64
+import http.client
 import json
 import os
 import re
 import socket
 import subprocess
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -138,10 +137,17 @@ def _stop_all() -> None:
         server.stop()
 
 
-def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+class _UnixConnection(http.client.HTTPConnection):
+    """HTTP to llama-server over its Unix socket."""
+
+    def __init__(self, path: Path, timeout: float):
+        super().__init__("localhost", timeout=timeout)
+        self.socket_path = path
+
+    def connect(self) -> None:
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect(str(self.socket_path))
 
 
 class LlamaServer:
@@ -151,7 +157,9 @@ class LlamaServer:
         self.threads = threads
         self.name = name
         self.proc: subprocess.Popen | None = None
-        self.port = 0
+        # A Unix socket in the user's private runtime folder, not a localhost port: another user on the machine can
+        # neither send it requests nor take its place and be sent your files' text.
+        self.socket = config.RUNTIME_DIR / f"llama-{name}-{os.getpid()}.sock"
         self.last_used = 0.0
 
     @property
@@ -163,10 +171,12 @@ class LlamaServer:
             return
         if not config.LLAMA_SERVER.exists():
             raise LlamaError(f"llama-server isn't built: run scripts/build-llama.sh")
-        self.port = _free_port()
+        config.RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+        self.socket.unlink(missing_ok=True)
         args = [str(config.LLAMA_SERVER), "-m", str(config.TEXT_MODEL), "--embeddings", "--pooling", "mean",
-                "--host", "127.0.0.1", "--port", str(self.port), "-c", "2048", "-b", "2048", "-ub", "2048",
-                "-np", "1", "--threads", str(self.threads), "--threads-batch", str(self.threads), "--no-webui"]
+                "--host", str(self.socket), "-c", "2048", "-b", "2048", "-ub", "2048",
+                "-np", "1", "--threads", str(self.threads), "--threads-batch", str(self.threads), "--no-webui",
+                "--no-slots"]
         if self.media:
             # Pictures arrive already sized for their budget (extract.prepare_image): the range keeps mtmd from
             # resizing them again.
@@ -188,11 +198,10 @@ class LlamaServer:
             if self.proc.poll() is not None:
                 raise LlamaError(f"llama-server exited ({self.proc.returncode}); see {log.name}")
             try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/health", timeout=2) as r:
-                    if r.status == 200:
-                        self.last_used = time.time()
-                        return
-            except (urllib.error.URLError, ConnectionError, TimeoutError):
+                if self._request("GET", "/health", None, timeout=2)[0] == 200:
+                    self.last_used = time.time()
+                    return
+            except (OSError, http.client.HTTPException):   # not listening yet
                 pass
             time.sleep(0.25)
         self.stop()
@@ -207,24 +216,33 @@ class LlamaServer:
                 self.proc.kill()
         self.proc = None
         _servers.discard(self)
+        self.socket.unlink(missing_ok=True)
 
     def stop_if_idle(self, seconds: float) -> None:
         if self.running and time.time() - self.last_used > seconds:
             self.stop()
 
+    def _request(self, method: str, path: str, body: bytes | None, timeout: float) -> tuple[int, bytes]:
+        connection = _UnixConnection(self.socket, timeout)
+        try:
+            connection.request(method, path, body=body, headers={"Content-Type": "application/json"} if body else {})
+            response = connection.getresponse()
+            return response.status, response.read()
+        finally:
+            connection.close()
+
     def _embed(self, content) -> list[np.ndarray]:
         self.start()
         body = json.dumps({"content": content, "embd_normalize": 2}).encode()
-        request = urllib.request.Request(f"http://127.0.0.1:{self.port}/embeddings", data=body,
-                                         headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(request, timeout=600) as r:
-                result = json.load(r)
-        except urllib.error.HTTPError as e:
-            raise LlamaError(f"llama-server: {e.read().decode(errors='replace')[:300]}") from None
+            status, data = self._request("POST", "/embeddings", body, timeout=600)
+        except (OSError, http.client.HTTPException) as e:
+            raise LlamaError(f"llama-server: {e}") from None
         finally:
             self.last_used = time.time()
-        result = sorted(result, key=lambda item: item["index"])
+        if status != 200:
+            raise LlamaError(f"llama-server: {data.decode(errors='replace')[:300]}")
+        result = sorted(json.loads(data), key=lambda item: item["index"])
         vectors = []
         for item in result:
             vector = np.asarray(item["embedding"], dtype=np.float32)

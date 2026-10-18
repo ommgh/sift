@@ -170,6 +170,19 @@ Ranking is a hybrid: each vector's similarity is put on the query's own scale pe
 modality, only files that stand out count as meaning matches, and the share of the query's words a file contains
 adds on top (codes and numbers weigh words double).
 
+## Privacy and safety
+
+- Nothing leaves the machine. The model runs locally, over a Unix socket in your runtime folder: there's no network
+  port, not even on localhost. The only downloads are the install's (llama.cpp at a fixed commit, the model and the
+  face models, all checked by SHA).
+- Only you can read what Sift keeps. The index holds your files' text, so it and the page previews and face crops
+  are kept in folders only you can open (0700, files 0600).
+- Sift only reads your files. It never changes, moves or uploads them, and it doesn't follow symlinks out of your
+  folders.
+- A downloaded file can't make it run away with memory. Every reader has a hard limit on what it decodes, and a file
+  past it is skipped: 64 MB of unpacked DOCX/ODT text, 120 megapixels per picture, 16 megapixels per rendered PDF
+  page, 5,000 passages per file. Pictures go only through the decoders for the types Sift reads.
+
 ## Uninstall
 
 ```bash

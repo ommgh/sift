@@ -14,6 +14,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import socketserver
 import threading
 import time
@@ -130,6 +131,10 @@ class Engine:
                     self.searcher.release()
                     self.faces = None
                     self.last_used = 0.0
+                    # Page renders and face crops are made again when they're needed; kept, they'd outlive the
+                    # files they show.
+                    shutil.rmtree(config.THUMBS_DIR, ignore_errors=True)
+                    faces.prune_thumbs(self.db)
 
 
 def pdf_thumb(path: str, page: int, mtime: float) -> str | None:
@@ -141,10 +146,9 @@ def pdf_thumb(path: str, page: int, mtime: float) -> str | None:
     try:
         import pymupdf
 
-        with pymupdf.open(path) as pdf:
+        with pymupdf.open(path, filetype="pdf") as pdf:
             p = pdf[page - 1]
-            zoom = THUMB_WIDTH / max(p.rect.width, 1)
-            pix = p.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom))
+            pix = extract.render(p, THUMB_WIDTH / max(p.rect.width, 1), max_pixels=THUMB_WIDTH * THUMB_WIDTH * 4)
             config.THUMBS_DIR.mkdir(parents=True, exist_ok=True)
             pix.save(str(out))
         return str(out)

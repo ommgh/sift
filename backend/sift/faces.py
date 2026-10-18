@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageOps
 
-from . import config, store
+from . import config, extract, store
 
 ZOO = "https://github.com/opencv/opencv_zoo/raw/47534e27c9851bb1128ccc0102f1145e27f23f98/models"
 DETECTOR = config.MODELS_DIR / "face_detection_yunet_2023mar.onnx"
@@ -63,7 +63,9 @@ def ensure_models() -> None:
             continue
         print(f"Downloading {path.name}")
         tmp = path.with_suffix(".part")
-        urllib.request.urlretrieve(url, tmp)
+        with urllib.request.urlopen(url, timeout=60) as response, open(tmp, "wb") as out:
+            while chunk := response.read(1 << 20):
+                out.write(chunk)
         if hashlib.sha256(tmp.read_bytes()).hexdigest() != sha:
             tmp.unlink()
             raise RuntimeError(f"{path.name}: checksum mismatch")
@@ -101,9 +103,7 @@ class FaceReader:
 
     def read(self, path: Path) -> list[dict]:
         """Every recognizable face in a photo: {"box": (x, y, w, h), "score", "vector"}."""
-        image = Image.open(path)
-        image.seek(0)
-        image = ImageOps.exif_transpose(image).convert("RGB")
+        image = ImageOps.exif_transpose(extract.open_image(path)).convert("RGB")
         scale = min(1.0, MAX_SIDE / max(image.size))
         if scale < 1:
             image = image.resize((round(image.width * scale), round(image.height * scale)), Image.Resampling.BILINEAR)
@@ -301,8 +301,8 @@ def face_thumb(db, face_id: int, size: int = 192) -> str | None:
         return None
     path, x, y, w, h = row
     try:
-        image = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
-    except OSError:
+        image = ImageOps.exif_transpose(extract.open_image(Path(path))).convert("RGB")
+    except (OSError, ValueError):
         return None
     side = int(max(w, h) * 1.6)
     cx, cy = x + w // 2, y + h // 2
@@ -311,6 +311,17 @@ def face_thumb(db, face_id: int, size: int = 192) -> str | None:
     out.parent.mkdir(parents=True, exist_ok=True)
     crop.save(out, "JPEG", quality=88)
     return str(out)
+
+
+def prune_thumbs(db) -> None:
+    """Deletes the crops of faces that are gone (their photo was deleted, changed or left out)."""
+    folder = config.CACHE_DIR / "faces"
+    if not folder.is_dir():
+        return
+    known = {str(i) for (i,) in db.execute("SELECT id FROM faces")}
+    for crop in folder.glob("*.jpg"):
+        if crop.stem not in known:
+            crop.unlink(missing_ok=True)
 
 
 def best_faces(index: "FaceIndex", name: str, count: int = 1) -> list[int]:
@@ -354,8 +365,8 @@ def contact_sheet(db, face_ids: list[int], out: Path, limit: int = 8) -> Path:
     sheet = Image.new("RGB", (size * max(len(rows), 1), size), (24, 24, 24))
     for i, (path, x, y, w, h) in enumerate(rows):
         try:
-            image = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
-        except OSError:
+            image = ImageOps.exif_transpose(extract.open_image(Path(path))).convert("RGB")
+        except (OSError, ValueError):
             continue
         pad = int(max(w, h) * 0.3)
         crop = image.crop((max(x - pad, 0), max(y - pad, 0), x + w + pad, y + h + pad))

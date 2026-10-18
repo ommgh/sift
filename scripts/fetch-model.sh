@@ -12,7 +12,11 @@ while read -r sum name; do
   fi
   echo "Downloading $name"
   curl -fL --retry 3 -C - --progress-bar -o "$name.part" "https://huggingface.co/$REPO/resolve/$REV/$name"
-  echo "$sum  $name.part" | sha256sum -c --quiet
+  if ! echo "$sum  $name.part" | sha256sum -c --quiet; then
+    rm -f "$name.part"   # not resumed next time
+    echo "$name: checksum mismatch" >&2
+    exit 1
+  fi
   mv "$name.part" "$name"
 done <<SUMS
 2188ac1deca4b77dffefd603c2776a9d76d9d74ec01841392982ebb840b09135 embeddinggemma-2-Q8_0.gguf

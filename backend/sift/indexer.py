@@ -11,6 +11,7 @@ import queue
 import threading
 import time
 from pathlib import Path
+from stat import S_ISREG
 
 from inotify_simple import INotify, flags as F
 
@@ -145,7 +146,9 @@ class Indexer:
                     for file, kind, stat in rules.walk(path, self.cfg.skip):
                         store.upsert_file(self.db, file, kind, stat.st_mtime, stat.st_size)
             elif what == "gone-dir":
-                for (p,) in self.db.execute("SELECT path FROM files WHERE path LIKE ?", (f"{path}/%",)).fetchall():
+                prefix = f"{path}/"
+                for (p,) in self.db.execute("SELECT path FROM files WHERE substr(path, 1, ?) = ?",
+                                            (len(prefix), prefix)).fetchall():
                     store.remove_file(self.db, p)
             elif what == "gone":
                 store.remove_file(self.db, str(path))
@@ -154,10 +157,10 @@ class Indexer:
                     continue
                 kind = rules.kind_of(path, rules.project_root_of(path, self.cfg.folders))
                 try:
-                    stat = path.stat()
+                    stat = path.lstat()   # a symlink isn't followed, as in rules.walk
                 except OSError:
                     continue
-                if kind and 0 < stat.st_size <= rules.MAX_BYTES[kind]:
+                if kind and S_ISREG(stat.st_mode) and 0 < stat.st_size <= rules.MAX_BYTES[kind]:
                     store.upsert_file(self.db, path, kind, stat.st_mtime, stat.st_size)
         if changed:
             store.bump_generation(self.db)
@@ -201,7 +204,7 @@ class Indexer:
 
     def read_pdf(self, file_id: int, path: Path) -> dict:
         pending: list[tuple[int, str, bool]] = []
-        pages = 0
+        pages = passages = 0
         for number, text, image in extract.pdf_pages(path):
             pages = number
             scale = number <= extract.SCALE_PAGES
@@ -211,8 +214,10 @@ class Indexer:
                 ocr = extract.ocr_finish(reading)
                 store.add_segment(self.db, file_id, path, number, "image", (text.strip() + "\n" + ocr).strip(),
                                   vector, scale)
-            else:
-                pending += [(number, piece, scale) for piece in extract.chunks(text)]
+            elif passages < extract.MAX_CHUNKS:   # the same cap for a whole PDF as for a whole document
+                pieces = extract.chunks(text, limit=extract.MAX_CHUNKS - passages)
+                passages += len(pieces)
+                pending += [(number, piece, scale) for piece in pieces]
             if len(pending) >= TEXT_BATCH * 4:
                 self.add_text_segments(file_id, path, pending)
                 pending = []
@@ -221,8 +226,9 @@ class Indexer:
         return {"pages": pages}
 
     def read_image(self, file_id: int, path: Path, kind: str) -> dict:
-        image = extract.open_image(path)
-        info = {"width": image.width, "height": image.height}
+        image = extract.open_image(path, draft=True)
+        width, height = image.info["full_size"]
+        info = {"width": width, "height": height}
         if min(image.width, image.height) < 64:
             store.add_segment(self.db, file_id, path, 0, "image", None, None)   # an icon: found by name only
             return info
@@ -272,7 +278,11 @@ class Indexer:
             log.info("config changed: rescanning")
             self.cfg_mtime = mtime
             old_device = self.server.device
-            self.cfg = config.load()
+            try:
+                self.cfg = config.load()
+            except (OSError, ValueError) as e:   # tomllib.TOMLDecodeError is a ValueError
+                log.error("can't read %s, keeping the settings it had: %s", config.CONFIG_FILE, e)
+                return
             device = pick_device(self.cfg.power.device)
             threads = threads_for(self.cfg.power.threads, device)
             if device != old_device or threads != self.server.threads:

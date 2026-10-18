@@ -30,7 +30,8 @@ def normalize(combo: str) -> str:
         raise ValueError("no key given")
     parts = [ALIASES.get(p, p) for p in parts]
     mods, key = parts[:-1], parts[-1]
-    if key in MODS or any(m not in MODS for m in mods):
+    # A key name (S, F1, SPACE, XF86AUDIOMUTE, CODE:39), nothing else: the combo is written into a Lua file.
+    if key in MODS or any(m not in MODS for m in mods) or not re.fullmatch(r"[A-Z0-9_:]+", key):
         raise ValueError(f"not a key combination: {combo!r} (try \"SUPER + S\")")
     return " + ".join([m for m in ORDER if m in mods] + [key])
 
@@ -109,6 +110,8 @@ def bind(combo: str) -> str | None:
     if managed and combo_now == combo and COMMAND in _text():
         return _replaced_note()   # already so; its unbind (if any) stays
     replaced = _replaced_note() if managed and combo_now == combo else used_by(combo)
+    if replaced:   # another binding's description, kept in a Lua comment: one line, no quotes
+        replaced = re.sub(r'[\x00-\x1f"\\]+', " ", replaced).strip()
     text = _without_block(_text())
     lines = [BEGIN]
     if replaced:

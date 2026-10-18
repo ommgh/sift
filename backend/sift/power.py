@@ -5,12 +5,18 @@ from pathlib import Path
 from . import config
 
 
+def _read(path: Path) -> str:
+    try:
+        return path.read_text().strip()
+    except OSError:
+        return ""
+
+
 def on_ac() -> bool:
-    supplies = list(Path("/sys/class/power_supply").glob("*"))
-    mains = [s for s in supplies if (s / "type").exists() and (s / "type").read_text().strip() == "Mains"]
+    mains = [s for s in Path("/sys/class/power_supply").glob("*") if _read(s / "type") == "Mains"]
     if not mains:
         return True   # a desktop
-    return any((s / "online").read_text().strip() == "1" for s in mains)
+    return any(_read(s / "online") == "1" for s in mains)
 
 
 def paused() -> bool:

@@ -51,7 +51,7 @@ scripts/fetch-model.sh > "$LOGS/setup-model.log" 2>&1 &
 model=$!
 # The backend's environment lives with Sift's data, not in the plugin folder: Omarchy refuses plugin folders that
 # contain symlinks (a virtualenv is full of them), which would block `omarchy plugin update`.
-(cd backend && UV_PROJECT_ENVIRONMENT="$DATA/venv" uv sync --quiet) > "$LOGS/setup-backend.log" 2>&1 &
+(cd backend && UV_PROJECT_ENVIRONMENT="$DATA/venv" uv sync --locked --quiet) > "$LOGS/setup-backend.log" 2>&1 &
 backend=$!
 if ! busy "Building llama.cpp (Vulkan)…" sh -c 'exec scripts/build-llama.sh > "$0" 2>&1' "$LOGS/setup-build.log"; then
   tail -n 30 "$LOGS/setup-build.log"
@@ -74,10 +74,7 @@ fi
 [[ -f backend/.venv/pyvenv.cfg ]] && rm -rf backend/.venv
 
 mkdir -p "$HOME/.local/bin"
-cat > "$HOME/.local/bin/sift" <<EOF
-#!/bin/bash
-exec "$DATA/venv/bin/sift" "\$@"
-EOF
+printf '#!/bin/bash\nexec %q "$@"\n' "$DATA/venv/bin/sift" > "$HOME/.local/bin/sift"
 chmod +x "$HOME/.local/bin/sift"
 SIFT="$HOME/.local/bin/sift"
 

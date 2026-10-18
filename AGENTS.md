@@ -6,7 +6,7 @@ photo, screenshot, PDF page or document that matches, by meaning or by exact wor
 
 - Repo: github.com/ommgh/sift (public, MIT), branch `main`. Landing page lives in a separate private repo,
   `ommgh/sift-site` (see `../sift-site/AGENTS.md`), deployed at https://sift.ommishra.in.
-- Status (2026-10-16): base version done and in daily use on the author's laptop. Next sessions improve it.
+- Status (2026-10-18): base version done and in daily use on the author's laptop. Next sessions improve it.
 
 ## Working agreements
 
@@ -62,9 +62,27 @@ uninstall.sh           services, shortcut block, launcher entry, wrapper, data (
 ```
 
 Runtime files: index `~/.local/share/sift/index.db`, models and llama build in `~/.local/share/sift/`, thumbnails in
-`~/.cache/sift/thumbs`, socket and status in `$XDG_RUNTIME_DIR/sift/`, pause flag in `~/.local/state/sift/paused`. All of it is private
-(the index holds file text): `config.make_private()` sets umask 077 and makes the data, cache and state folders 0700
-on every `sift` command, `store.connect()` makes the index 0600, the units set `UMask=0077` (marketplace review, 2026-10-16).
+`~/.cache/sift/thumbs`, sockets (the daemon's, and each llama-server's `llama-<name>-<pid>.sock`) and status in
+`$XDG_RUNTIME_DIR/sift/`, pause flag in `~/.local/state/sift/paused`.
+
+## Hardening (keep it: the marketplace's reviewers check for exactly these)
+
+The marketplace review (omacom/omarchy-plugin-marketplace#11729) reads the code as if another local user, or a
+hostile file in Downloads, were the attacker. Invariants:
+- Private storage: `config.make_private()` (umask 077; data, cache, state and config folders 0700) runs first in every
+  `sift` command; `store.connect()` makes the index and its WAL/SHM 0600; units set `UMask=0077`, `NoNewPrivileges`.
+- No TCP: llama-server listens on a Unix socket in `$XDG_RUNTIME_DIR/sift` (`--host *.sock`), with `--no-slots`
+  and `--no-webui`. Never go back to a localhost port (other users can connect to it, or bind it first).
+- Bounded decoders (`extract.py`): DOCX/ODT unpacked to at most `MAX_XML_BYTES` whatever the zip header says, and
+  refused if they hold a DOCTYPE; Pillow only with `IMAGE_FORMATS` (no EPS → Ghostscript) and at most `MAX_PIXELS`
+  (big JPEGs decoded with `draft`); PDF pages rendered through `extract.render` (`MAX_RENDER_PIXELS`), opened with
+  `filetype="pdf"`; at most `MAX_CHUNKS` passages per file. Any new reader needs the same kind of limit.
+- Symlinks are never followed out of folders (walk and the watcher both use lstat).
+- Cached page renders are deleted, and orphaned face crops pruned, when the daemon goes idle.
+- Anything written into another program's config is validated: shortcut keys `[A-Z0-9_:]+`, descriptions stripped
+  of quotes and control characters (bindings.lua is Lua); config.toml strings via `json.dumps` and written
+  atomically.
+- Installs use `uv sync --locked` (uv.lock has hashes); downloads are pinned by commit/revision and SHA-256.
 
 ## How it works
 

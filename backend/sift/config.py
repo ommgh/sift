@@ -1,5 +1,6 @@
 """Paths and settings. Settings live in ~/.config/sift/config.toml; everything has a default."""
 
+import json
 import os
 import re
 import tomllib
@@ -29,7 +30,7 @@ def make_private() -> None:
     """What Sift keeps holds what's in your files (passages, page renders, face crops): only you may read it, whatever
     the umask. New files come out 0600 and folders 0700; folders from before this get tightened."""
     os.umask(0o077)
-    for folder in (DATA_DIR, CACHE_DIR, STATE_DIR):
+    for folder in (DATA_DIR, CACHE_DIR, STATE_DIR, CONFIG_DIR):
         if folder.is_dir():
             folder.chmod(0o700)
 
@@ -89,7 +90,15 @@ class Config:
 def ensure_config() -> None:
     if not CONFIG_FILE.exists():
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        CONFIG_FILE.write_text(DEFAULT_CONFIG)
+        _write(DEFAULT_CONFIG)
+
+
+def _write(text: str) -> None:
+    """Replaces the settings file in one step: the indexer may read it at any moment."""
+    target = CONFIG_FILE.resolve()   # a symlink (dotfiles) stays one
+    tmp = target.with_name(target.name + ".tmp")
+    tmp.write_text(text)
+    tmp.replace(target)
 
 
 def load() -> Config:
@@ -112,13 +121,14 @@ def display_path(path: Path) -> str:
 
 
 def _toml_list(values: list[str]) -> str:
-    return "[" + ", ".join('"' + v.replace("\\", "\\\\").replace('"', '\\"') + '"' for v in values) + "]"
+    # A JSON string is a valid TOML basic string, escapes and all (a folder name can hold quotes or a newline).
+    return "[" + ", ".join(json.dumps(v, ensure_ascii=False) for v in values) + "]"
 
 
 def _write_top_level(text: str, key: str, values: list[str]) -> str:
     """Sets a top-level list (folders, top_level_only, skip), keeping the rest of the file as written."""
     line = f"{key} = {_toml_list(values)}"
-    pattern = re.compile(rf"^{key}\s*=\s*\[[^\]]*\]", re.M)
+    pattern = re.compile(rf'^{key}\s*=\s*\[(?:"(?:[^"\\]|\\.)*"|[^\]"])*\]', re.M)
     if pattern.search(text):
         return pattern.sub(lambda _: line, text, count=1)
     section = re.search(r"^\[", text, re.M)
@@ -140,7 +150,7 @@ def set_value(section: str, key: str, value: str) -> None:
         text = text[:found.start()] + body + text[found.end():]
     else:
         text = text.rstrip("\n") + f"\n\n[{section}]\n{key} = {value}\n"
-    CONFIG_FILE.write_text(text)
+    _write(text)
 
 
 def set_faces_enabled(enabled: bool) -> None:
@@ -184,7 +194,7 @@ def _save_folders(folders: list[Path], shallow: set[Path]) -> None:
     text = CONFIG_FILE.read_text()
     text = _write_top_level(text, "folders", [display_path(f) for f in folders])
     text = _write_top_level(text, "top_level_only", [display_path(f) for f in folders if f in shallow])
-    CONFIG_FILE.write_text(text)
+    _write(text)
 
 
 def _current() -> tuple[list[Path], set[Path]]:

@@ -7,6 +7,9 @@ PartOf=graphical-session.target
 [Service]
 # The index, thumbnails and face crops hold what's in your files: readable by you alone.
 UMask=0077
+NoNewPrivileges=yes
+# Stop signals go to sift alone, which stops its llama-server once (a second SIGTERM makes it abort and dump core).
+KillMode=mixed
 ExecStart=%h/.local/bin/sift serve
 Restart=always
 RestartSec=5

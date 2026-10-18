@@ -93,15 +93,17 @@ def launch(command: list[str]) -> None:
 
 
 def cmd_open(args) -> None:
-    command = pdf_opener(args.page, args.path) if args.page and args.path.lower().endswith(".pdf") else None
-    launch(command or ["xdg-open", args.path])
+    path = str(Path(args.path).resolve())   # absolute: never mistaken for an option
+    command = pdf_opener(args.page, path) if args.page and path.lower().endswith(".pdf") else None
+    launch(command or ["xdg-open", path])
 
 
 def cmd_reveal(args) -> None:
+    path = Path(args.path).resolve()
     if shutil.which("nautilus"):
-        launch(["nautilus", "--select", args.path])
+        launch(["nautilus", "--select", str(path)])
     else:
-        launch(["xdg-open", str(Path(args.path).parent)])
+        launch(["xdg-open", str(path.parent)])
 
 
 def cmd_faces(args) -> None:

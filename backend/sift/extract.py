@@ -13,7 +13,13 @@ from xml.etree import ElementTree
 
 from PIL import Image, ImageOps
 
-Image.MAX_IMAGE_PIXELS = 120_000_000
+# Files come from anywhere (Downloads), so every decoder is bounded by what it may produce, not by the file's size.
+MAX_PIXELS = 120_000_000        # a picture, decoded (a 200 MP phone photo is decoded at half size, see open_image)
+MAX_RENDER_PIXELS = 16_000_000  # a PDF page, rendered (an A4 page at 150 dpi is 2.2 MP)
+MAX_XML_BYTES = 64 << 20        # a DOCX/ODT's text, unpacked (a whole book is a few MB)
+# Only the decoders for the types Sift reads: Pillow picks a decoder by content, and some (EPS) run Ghostscript.
+IMAGE_FORMATS = ("PNG", "JPEG", "WEBP", "GIF", "BMP", "TIFF")
+Image.MAX_IMAGE_PIXELS = MAX_PIXELS
 
 CHUNK_CHARS = 1800      # ~450 tokens
 CHUNK_OVERLAP = 200
@@ -85,11 +91,23 @@ class _HTMLText(HTMLParser):
             self.parts.append(data)
 
 
-def _xml_text(data: bytes, paragraph_tag: str) -> str:
-    root = ElementTree.fromstring(data)
+def _zipped_xml_text(path: Path, member: str, paragraph_tag: str) -> str:
+    """The paragraphs of an XML file inside a zip (a DOCX or ODT), unpacked no further than MAX_XML_BYTES whatever the
+    zip claims, and without a DOCTYPE (Office files never have one; it's how entity expansion starts)."""
+    with zipfile.ZipFile(path) as z:
+        if z.getinfo(member).file_size > MAX_XML_BYTES:
+            raise ValueError("too large once unpacked")
+        with z.open(member) as f:
+            data = f.read(MAX_XML_BYTES + 1)
+    if len(data) > MAX_XML_BYTES:
+        raise ValueError("too large once unpacked")
+    if b"<!DOCTYPE" in data:
+        raise ValueError("unexpected DOCTYPE")
     paragraphs = []
-    for p in root.iter(paragraph_tag):
-        paragraphs.append("".join(t for t in p.itertext()))
+    for _, element in ElementTree.iterparse(io.BytesIO(data)):
+        if element.tag == paragraph_tag:
+            paragraphs.append("".join(element.itertext()))
+            element.clear()
     return "\n".join(paragraphs)
 
 
@@ -104,11 +122,10 @@ def _rtf_text(raw: str) -> str:
 def doc_text(path: Path) -> str:
     ext = path.suffix.lower()
     if ext == ".docx":
-        with zipfile.ZipFile(path) as z:
-            return _xml_text(z.read("word/document.xml"), "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p")
+        return _zipped_xml_text(path, "word/document.xml",
+                                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p")
     if ext == ".odt":
-        with zipfile.ZipFile(path) as z:
-            return _xml_text(z.read("content.xml"), "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}p")
+        return _zipped_xml_text(path, "content.xml", "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}p")
     raw = path.read_bytes().decode("utf-8", errors="replace")
     if ext in (".html", ".htm"):
         parser = _HTMLText()
@@ -159,9 +176,16 @@ def prepare_image(image: Image.Image, budget: int) -> bytes:
     return out.getvalue()
 
 
-def open_image(path: Path) -> Image.Image:
-    image = Image.open(path)
+def open_image(path: Path, draft: bool = False) -> Image.Image:
+    """A picture, decoded only if it's one of IMAGE_FORMATS and at most MAX_PIXELS. draft: a big JPEG may be decoded at
+    1/2, 1/4 or 1/8 size, still at least 2000 px a side (more than the vision encoder or face detection use)."""
+    image = Image.open(path, formats=IMAGE_FORMATS)
     image.seek(0)   # a GIF's first frame
+    image.info["full_size"] = image.size
+    if draft and image.format == "JPEG":
+        image.draft("RGB", (2000, 2000))
+    if image.width * image.height > MAX_PIXELS:
+        raise ValueError(f"too large to read ({image.width} × {image.height})")
     image.load()
     return image
 
@@ -214,7 +238,7 @@ def pdf_pages(path: Path):
     for the vision encoder and OCR (a scan, a slide, a chart)."""
     import pymupdf
 
-    with pymupdf.open(path) as pdf:
+    with pymupdf.open(path, filetype="pdf") as pdf:
         if pdf.needs_pass:
             raise ValueError("password protected")
         for number, page in enumerate(pdf, start=1):
@@ -223,13 +247,24 @@ def pdf_pages(path: Path):
             text = page.get_text("text") or ""
             image = None
             if len(text.strip()) < MIN_PAGE_TEXT:
-                pix = page.get_pixmap(dpi=150)
+                pix = render(page, 150 / 72)
                 image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
             yield number, text, image
+
+
+def render(page, zoom: float, max_pixels: int = MAX_RENDER_PIXELS):
+    """A PDF page as a pixmap at zoom (1 = 72 dpi), smaller if that would be more than max_pixels: a page can claim to
+    be any size."""
+    import pymupdf
+
+    area = max(page.rect.width * page.rect.height, 1) * zoom * zoom
+    if area > max_pixels:
+        zoom *= math.sqrt(max_pixels / area)
+    return page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom))
 
 
 def pdf_page_count(path: Path) -> int:
     import pymupdf
 
-    with pymupdf.open(path) as pdf:
+    with pymupdf.open(path, filetype="pdf") as pdf:
         return pdf.page_count
