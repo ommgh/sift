@@ -19,6 +19,16 @@ Planned as 0.3.0.
 
 - `install.sh` installs the backend without its development tools.
 
+### Fixed
+
+- "show me the lease" no longer looks only at photos of a person you named "me": a name right after "show", "find",
+  "give" and similar verbs isn't taken as a person.
+- `sift shortcut set "SUPER + code:39"` writes the keycode the way Hyprland reads it (it was written as `CODE:39`).
+
+### Security
+
+- The search daemon drops requests over 64 KB instead of reading them whole.
+
 ## [0.2.0] - 2026-10-18
 
 The first release, listed and verified on the

@@ -29,6 +29,7 @@ MAX_SIDE = 1600        # photos are scaled down to this for detection: small fac
 MIN_FACE = 28          # px (after scaling): smaller faces are too blurry to recognize
 MIN_SCORE = 0.8        # detector confidence
 GROUP_SIMILARITY = 0.5 # stricter than matching: a group should be one person
+NOT_A_NAME_AFTER = {"show", "find", "give", "get", "send", "tell", "help", "let", "remind", "bring"}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS faces (
@@ -208,12 +209,15 @@ class FaceIndex:
 
     def names_in(self, query: str) -> tuple[list[str], str]:
         """The named people a query mentions, and the query without their names ("om at a mountain" → ["om"],
-        "at a mountain"). Longer names first, so "om mishra" wins over "om"."""
+        "at a mountain"). Longer names first, so "om mishra" wins over "om". A name right after a verb like "show"
+        isn't one: "show me the lease" asks for a lease, not for photos of a person called "me"."""
         found, rest = [], " " + query + " "
         for name in sorted(self.people, key=len, reverse=True):
             needle = " " + name.lower() + " "
             lowered = rest.lower()
             i = lowered.find(needle)
+            while i >= 0 and lowered[:i].split()[-1:] and lowered[:i].split()[-1] in NOT_A_NAME_AFTER:
+                i = lowered.find(needle, i + 1)
             if i >= 0:
                 found.append(name)
                 rest = rest[:i] + " " + rest[i + len(needle):]

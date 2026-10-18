@@ -151,7 +151,7 @@ hostile file in Downloads, were the attacker. Invariants:
   (coverage^1.5; codes/numbers weigh `WORD_WEIGHT` 2). Kind hints in the query ("screenshot", "pdf", …) and a
   lookup mode for code-like queries. Results under `STRONG_RATIO` of the best fold behind Tab as weaker matches.
   A query naming a known person filters to photos with their face (`only`), and the rest of the query ranks them.
-  Caveat: any query containing the word "me" is restricted to the "me" person's photos when that person exists.
+  A name right after "show/find/give/get/…" (`faces.NOT_A_NAME_AFTER`) isn't a person: "show me the lease".
 - **Panel protocol:** JSON lines over `$XDG_RUNTIME_DIR/sift/sift.sock`. Requests
   `{"id", "op": "search", "q", "limit"}`, `{"op": "warm"}`, `{"op": "status"}`, `{"op": "ping"}`; search replies
   include hits and `people`. The panel debounces 160 ms and keeps a query pending while the socket reconnects.
