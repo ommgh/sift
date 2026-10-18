@@ -30,8 +30,10 @@ def normalize(combo: str) -> str:
         raise ValueError("no key given")
     parts = [ALIASES.get(p, p) for p in parts]
     mods, key = parts[:-1], parts[-1]
-    # A key name (S, F1, SPACE, XF86AUDIOMUTE, CODE:39), nothing else: the combo is written into a Lua file.
-    if key in MODS or any(m not in MODS for m in mods) or not re.fullmatch(r"[A-Z0-9_:]+", key):
+    if key.startswith("CODE:"):
+        key = "code:" + key[5:]   # Hyprland only knows the lowercase prefix
+    # A key name (S, F1, SPACE, XF86AUDIOMUTE) or a keycode (code:39), nothing else: it's written into a Lua file.
+    if key in MODS or any(m not in MODS for m in mods) or not re.fullmatch(r"[A-Z0-9_]+|code:\d+", key):
         raise ValueError(f"not a key combination: {combo!r} (try \"SUPER + S\")")
     return " + ".join([m for m in ORDER if m in mods] + [key])
 

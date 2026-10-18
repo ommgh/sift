@@ -27,6 +27,7 @@ from .search import Searcher
 log = logging.getLogger("sift.daemon")
 
 IDLE_RELEASE = 10 * 60
+MAX_REQUEST = 64 << 10   # a request is a line of JSON: a query, a folder path
 THUMB_WIDTH = 480
 
 
@@ -171,7 +172,9 @@ class Handler(socketserver.StreamRequestHandler):
     engine: Engine
 
     def handle(self):
-        for line in self.rfile:
+        while line := self.rfile.readline(MAX_REQUEST + 1):
+            if len(line) > MAX_REQUEST:
+                return   # not a request this socket serves; the connection is dropped
             try:
                 request = json.loads(line)
             except ValueError:

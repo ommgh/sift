@@ -83,7 +83,9 @@ install `main`'s HEAD (the default branch). So `main` only ever moves by a relea
 - PRs into `dev`: squash merge, title = the change. Each adds a line to CHANGELOG.md under Unreleased (Added /
   Changed / Fixed / Security). Use the PR template's checklist. Claude opens PRs; the author merges them (the
   harness refuses agent self-merges without review). To stack work while a PR waits, branch off that PR's branch
-  and still target `dev`; once the lower PR is squash-merged the upper one merges cleanly (identical changes).
+  and still target `dev`. A squash merge gives `dev` new commits, so the upper PR then conflicts with its own lower
+  commits: replay only its own work with `git fetch && git rebase --onto origin/dev <old lower-branch tip> <upper>`,
+  re-run the checks and `git push --force-with-lease` (feature branches only; `main`/`dev` refuse force pushes).
 - The version stays the last release's on `dev` until release prep; `check-repo.sh` requires manifest.json,
   backend/pyproject.toml and uv.lock to agree.
 - Local checks before a PR: `.github/scripts/check-repo.sh`; tests with
@@ -151,7 +153,7 @@ hostile file in Downloads, were the attacker. Invariants:
   (coverage^1.5; codes/numbers weigh `WORD_WEIGHT` 2). Kind hints in the query ("screenshot", "pdf", …) and a
   lookup mode for code-like queries. Results under `STRONG_RATIO` of the best fold behind Tab as weaker matches.
   A query naming a known person filters to photos with their face (`only`), and the rest of the query ranks them.
-  Caveat: any query containing the word "me" is restricted to the "me" person's photos when that person exists.
+  A name right after "show/find/give/get/…" (`faces.NOT_A_NAME_AFTER`) isn't a person: "show me the lease".
 - **Panel protocol:** JSON lines over `$XDG_RUNTIME_DIR/sift/sift.sock`. Requests
   `{"id", "op": "search", "q", "limit"}`, `{"op": "warm"}`, `{"op": "status"}`, `{"op": "ping"}`; search replies
   include hits and `people`. The panel debounces 160 ms and keeps a query pending while the socket reconnects.
