@@ -261,10 +261,3 @@ def render(page, zoom: float, max_pixels: int = MAX_RENDER_PIXELS):
     if area > max_pixels:
         zoom *= math.sqrt(max_pixels / area)
     return page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom))
-
-
-def pdf_page_count(path: Path) -> int:
-    import pymupdf
-
-    with pymupdf.open(path, filetype="pdf") as pdf:
-        return pdf.page_count

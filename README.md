@@ -27,17 +27,19 @@ your theme.
 
 ## Install
 
+Sift is listed and verified on the [Omarchy plugin marketplace](https://plugins.omarchy.org/plugin.html?id=io.github.ommgh.sift).
+
 ```bash
 omarchy plugin add https://github.com/ommgh/sift --enable
-~/.config/omarchy/plugins/io.github.ommgh.sift/install.sh
 ```
 
-The second line does the rest, in about 3 minutes the first time: it installs the packages it needs (asking first),
-builds llama.cpp for your machine while the model (865 MB, checksummed) and the Python backend download, asks which
-folders to read and which key opens Sift, and starts two user services. Skipped it? The Sift icon in the bar, or
-`omarchy-shell shell toggle io.github.ommgh.sift`, offers to run it.
+Then click the Sift icon (a magnifier) that lights up in the bar: it opens a terminal and sets Sift up, in about 3 minutes the
+first time. It installs the packages it needs (asking first), builds llama.cpp for your machine while the model
+(865 MB, checksummed) and the Python backend download, asks which folders to read and which key opens Sift, and
+starts two user services. Prefer the terminal? Run the same setup directly:
+`~/.config/omarchy/plugins/io.github.ommgh.sift/install.sh`.
 
-Run it again to update, after `omarchy plugin update io.github.ommgh.sift`. `sift doctor` shows what Sift runs on and what's missing.
+To update: `omarchy plugin update io.github.ommgh.sift`, then run `install.sh` again (path above). `sift doctor` shows what Sift runs on and what's missing.
 
 ### The shortcut
 
