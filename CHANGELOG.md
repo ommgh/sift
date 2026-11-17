@@ -5,7 +5,7 @@ progress is listed under Unreleased, on the `dev` branch, until it ships.
 
 ## [Unreleased]
 
-Planned as 0.3.0.
+## [0.3.0] - 2026-11-17
 
 ### Added
 
@@ -48,5 +48,6 @@ The first release, listed and verified on the
 - Privacy and safety: nothing leaves the machine, the model is served over a private Unix socket, what Sift keeps is
   readable by you alone, every file reader has a hard limit, and downloads are pinned and checksummed.
 
-[Unreleased]: https://github.com/ommgh/sift/compare/v0.2.0...dev
+[Unreleased]: https://github.com/ommgh/sift/compare/v0.3.0...dev
+[0.3.0]: https://github.com/ommgh/sift/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ommgh/sift/releases/tag/v0.2.0
