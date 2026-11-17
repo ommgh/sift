@@ -61,6 +61,10 @@ install.sh             missing packages (asks, then omarchy pkg add); build ∥ 
 uninstall.sh           services, shortcut block, launcher entry, wrapper, data (unless --keep-index)
 backend/tests/         pytest: the privacy and safety guarantees (hostile files, permissions, escaping)
 CHANGELOG.md           Unreleased (on dev) + one dated section per release; release notes come from it
+preview.png, icon.png  marketplace art: 1600x900 preview (16:9; the marketplace crops it to 2:1-3:1 on cards, so
+                       everything readable sits in the centred box), 528px square icon (the 11x11 app icon at 48px
+                       per pixel; shown once the marketplace takes root icons: omacom/omarchy-plugin-marketplace#15117).
+                       Rendered by sift-site: /card/marketplace via scripts/social.sh, public/brand/sift-app-icon.png
 .github/               README banners (light/dark, rendered from sift-site /card/banner*), FUNDING.yml, PR template,
                        workflows/checks.yml (tests on 3.12 + 3.14, repo rules), workflows/release.yml (tag → release),
                        scripts/check-repo.sh, scripts/release-notes.sh. .github/ and tests/ aren't marketplace-scanned
