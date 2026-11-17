@@ -14,10 +14,14 @@ Planned as 0.3.0.
 - A release process: `dev` for what's next, `main` for releases only, a GitHub release built from this changelog
   for every tag.
 - The README links the marketplace listing.
+- A square `icon.png` for the marketplace listing.
 
 ### Changed
 
 - `install.sh` installs the backend without its development tools.
+- The marketplace preview is 16:9 with everything readable in the middle, so listing cards no longer cut off the
+  name.
+- The README installs Sift with one command; setup then runs from the bar icon (or `install.sh`, as before).
 
 ### Fixed
 
